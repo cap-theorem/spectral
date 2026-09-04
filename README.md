@@ -15,4 +15,4 @@ Each sidecar participates in a sparse expander overlay, advertises local service
 
 ## Quick start
 
-Requirements: Go 1.26+ and Docker.
+Requirements: Go 1.27+ and Docker.
