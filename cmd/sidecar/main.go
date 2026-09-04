@@ -2,44 +2,19 @@ package main
 
 import (
 	"context"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"fmt"
 
-	"github.com/cap-theorem/spectral/internal/api"
+	"github.com/cap-theorem/spectral/internal/clock"
 )
 
 func main() {
-	server, err := api.NewServer()
-	if err != nil {
-		log.Fatal(err)
-	}
+	timer := clock.NewTimer()
+	tick := 0
 
-	server.Start()
-	log.Printf("listening on http://%s", server.Addr())
+	go timer.Run(context.Background())
 
-	signalCtx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
-
-	select {
-	case err := <-server.Done():
-		if err != nil {
-			log.Fatal(err)
-		}
-		return
-	case <-signalCtx.Done():
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Fatal(err)
+	for range timer.C() {
+		tick++
+		fmt.Printf("Tick: %d\n", tick)
 	}
 }
