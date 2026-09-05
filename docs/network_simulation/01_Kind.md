@@ -9,3 +9,5 @@ kubectl get nodes
 make kind-down
 kind get clusters
 ```
+
+Note: depending on your installation you may need to run some commands under `sudo` to prevent errors.
