@@ -26,7 +26,7 @@ func (a *Actor) Run(ctx context.Context) {
 func (a *Actor) handle(msg Message) {
 	switch msg := msg.(type) {
 	case registerCommand:
-		println(msg.registration)
+		println(msg.registration.Endpoint)
 	case renewCommand:
 		println(msg.token)
 	case lookupCommand:

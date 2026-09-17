@@ -11,7 +11,8 @@ type connectCommand struct {
 	addr   string
 }
 
-func (connectCommand) isCommand()
+func (connectCommand) isCommand() {
+}
 
 type Transport struct {
 	commands chan commands

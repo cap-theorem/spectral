@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cap-theorem/spectral/internal/api"
+	"github.com/cap-theorem/spectral/internal/node"
 )
 
 func main() {
@@ -27,7 +28,10 @@ func run() error {
 	)
 	defer stop()
 
-	api := api.NewAPI()
+	na := node.NewActor()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
+	slog.SetDefault(logger)
+	api := api.NewAPI(&na, logger.With("component", "api"))
 
 	apiErrors := make(chan error, 1)
 

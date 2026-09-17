@@ -3,22 +3,28 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/cap-theorem/spectral/internal/node"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httplog/v3"
 )
 
 type API struct {
 	na     *node.Actor
 	server *http.Server
+	logger *slog.Logger
 }
 
-func NewAPI(na *node.Actor) API {
+func NewAPI(na *node.Actor, logger *slog.Logger) API {
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(httplog.RequestLogger(logger, &httplog.Options{
+		Level:  slog.LevelInfo,
+		Schema: httplog.SchemaECS.Concise(true),
+	}))
 	r.Use(middleware.Timeout(5 * time.Second))
 
 	r.Get("/", HandleHello)
@@ -35,11 +41,12 @@ func NewAPI(na *node.Actor) API {
 	return API{
 		na,
 		server,
+		logger,
 	}
 }
 
 func (a *API) Serve() error {
-	println("Starting API server!")
+	a.logger.Info("API server starting", "address", "http://localhost"+a.server.Addr)
 	err := a.server.ListenAndServe()
 
 	if errors.Is(err, http.ErrServerClosed) {
