@@ -12,6 +12,7 @@ import (
 
 	"github.com/cap-theorem/spectral/internal/api"
 	"github.com/cap-theorem/spectral/internal/node"
+	"github.com/golang-cz/devslog"
 )
 
 func main() {
@@ -23,7 +24,7 @@ func main() {
 func newLogger() *slog.Logger {
 	// Makes a logger which can output in text for humans and json for containers.
 
-	options := &slog.HandlerOptions{
+	slogOptions := &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}
 
@@ -31,9 +32,16 @@ func newLogger() *slog.Logger {
 
 	switch os.Getenv("LOG_FORMAT") {
 	case "json":
-		handler = slog.NewJSONHandler(os.Stdout, options)
+		handler = slog.NewJSONHandler(os.Stdout, slogOptions)
 	default:
-		handler = slog.NewTextHandler(os.Stdout, options)
+		handler = devslog.NewHandler(os.Stdout, &devslog.Options{
+			HandlerOptions: slogOptions,
+			SortKeys:       true,
+			DebugColor:     devslog.Blue,
+			InfoColor:      devslog.Green,
+			WarnColor:      devslog.Yellow,
+			ErrorColor:     devslog.Red,
+		})
 	}
 
 	return slog.New(handler)
