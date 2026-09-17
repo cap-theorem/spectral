@@ -28,10 +28,12 @@ func run() error {
 	)
 	defer stop()
 
-	na := node.NewActor()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
-	slog.SetDefault(logger)
-	api := api.NewAPI(&na, logger.With("component", "api"))
+	apiLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
+	actorLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
+	slog.SetDefault(apiLogger)
+
+	na := node.NewActor(actorLogger.With("component", "actor"))
+	api := api.NewAPI(&na, apiLogger.With("component", "api"))
 
 	apiErrors := make(chan error, 1)
 
