@@ -20,6 +20,25 @@ func main() {
 	}
 }
 
+func newLogger() *slog.Logger {
+	// Makes a logger which can output in text for humans and json for containers.
+
+	options := &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+
+	var handler slog.Handler
+
+	switch os.Getenv("LOG_FORMAT") {
+	case "json":
+		handler = slog.NewJSONHandler(os.Stdout, options)
+	default:
+		handler = slog.NewTextHandler(os.Stdout, options)
+	}
+
+	return slog.New(handler)
+}
+
 func run() error {
 	signalCtx, stop := signal.NotifyContext(
 		context.Background(),
@@ -28,10 +47,8 @@ func run() error {
 	)
 	defer stop()
 
-	apiLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
-	actorLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
-	slog.SetDefault(apiLogger)
-
+	apiLogger := newLogger()
+	actorLogger := newLogger()
 	na := node.NewActor(actorLogger.With("component", "actor"))
 	api := api.NewAPI(&na, apiLogger.With("component", "api"))
 
