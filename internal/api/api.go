@@ -6,15 +6,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cap-theorem/spectral/internal/node"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 type API struct {
+	na     *node.Actor
 	server *http.Server
 }
 
-func NewAPI() API {
+func NewAPI(na *node.Actor) API {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Timeout(5 * time.Second))
@@ -31,6 +33,7 @@ func NewAPI() API {
 	}
 
 	return API{
+		na,
 		server,
 	}
 }
@@ -44,6 +47,10 @@ func (a *API) Serve() error {
 	}
 
 	return err
+}
+
+func (a *API) HandleLookup(w http.ResponseWriter, r *http.Request) {
+	a.na.Lookup(r.Context(), "payments-api")
 }
 
 func (a *API) Shutdown(ctx context.Context) error {
