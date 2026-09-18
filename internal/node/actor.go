@@ -37,7 +37,7 @@ func (a *Actor) handle(msg Message) {
 	case lookupCommand:
 		a.logger.Info("", "service", msg.service)
 	case statusCommand:
-		a.logger.Info("", "status command hit")
+		a.logger.Info("status command hit")
 	}
 }
 

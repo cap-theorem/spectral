@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cap-theorem/spectral/internal/api"
+	"github.com/cap-theorem/spectral/internal/metrics"
 	"github.com/cap-theorem/spectral/internal/node"
 	"github.com/golang-cz/devslog"
 )
@@ -57,8 +58,26 @@ func run() error {
 
 	apiLogger := newLogger()
 	actorLogger := newLogger()
+	metricsLogger := newLogger()
 	na := node.NewActor(actorLogger.With("component", "actor"))
 	api := api.NewAPI(&na, apiLogger.With("component", "api"))
+
+	metricsPipeline, err := metrics.NewPipeline(
+		signalCtx,
+		metricsLogger.With("component", "metrics"),
+	)
+	if err != nil {
+		return err
+	}
+	meter := metricsPipeline.Meter("github.com/cap-theorem/spectral")
+
+	starts, err := meter.Int64Counter(
+		"spectral.process.starts",
+	)
+	if err != nil {
+		return err
+	}
+	starts.Add(signalCtx, 1)
 
 	apiErrors := make(chan error, 1)
 
@@ -96,5 +115,7 @@ func run() error {
 		apiErr = nil
 	}
 
-	return errors.Join(apiErr, shutdownErr)
+	metricsErr := metricsPipeline.Shutdown(shutdownCtx)
+
+	return errors.Join(apiErr, shutdownErr, metricsErr)
 }
