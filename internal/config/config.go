@@ -24,7 +24,7 @@ func Load() (Config, error) {
 	var cfg Config
 
 	if err := env.Parse(&cfg); err != nil {
-		return Config{}, fmt.Errorf("parse environment: %w*, err")
+		return Config{}, fmt.Errorf("parse environment: %w", err)
 	}
 
 	return cfg, nil
