@@ -31,13 +31,13 @@ func (a *Actor) Run(ctx context.Context) {
 func (a *Actor) handle(msg Message) {
 	switch msg := msg.(type) {
 	case registerCommand:
-		a.logger.Info("endpoint", msg.registration.Endpoint)
+		a.logger.Info("registration recieved", "endpoint", msg.registration.Endpoint)
 	case renewCommand:
-		a.logger.Info("token", msg.token)
+		a.logger.Info("", "token", msg.token)
 	case lookupCommand:
-		a.logger.Info("service", msg.service)
+		a.logger.Info("", "service", msg.service)
 	case statusCommand:
-		a.logger.Info("status command hit")
+		a.logger.Info("", "status command hit")
 	}
 }
 
