@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/cap-theorem/spectral/internal/api"
+	"github.com/cap-theorem/spectral/internal/config"
 	"github.com/cap-theorem/spectral/internal/metrics"
 	"github.com/cap-theorem/spectral/internal/node"
 	"github.com/golang-cz/devslog"
@@ -22,16 +23,15 @@ func main() {
 	}
 }
 
-func newLogger() *slog.Logger {
+func newLogger(logFormat string) *slog.Logger {
 	// Makes a logger which can output in text for humans and json for containers.
-
 	slogOptions := &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}
 
 	var handler slog.Handler
 
-	switch os.Getenv("LOG_FORMAT") {
+	switch logFormat {
 	case "json":
 		handler = slog.NewJSONHandler(os.Stdout, slogOptions)
 	default:
@@ -49,6 +49,12 @@ func newLogger() *slog.Logger {
 }
 
 func run() error {
+	// TODO: clean......
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+
 	signalCtx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
@@ -56,9 +62,9 @@ func run() error {
 	)
 	defer stop()
 
-	apiLogger := newLogger()
-	actorLogger := newLogger()
-	metricsLogger := newLogger()
+	apiLogger := newLogger(cfg.LogFormat)
+	actorLogger := newLogger(cfg.LogFormat)
+	metricsLogger := newLogger(cfg.LogFormat)
 	na := node.NewActor(actorLogger.With("component", "actor"))
 	api := api.NewAPI(&na, apiLogger.With("component", "api"))
 
@@ -98,7 +104,7 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(
 		context.Background(),
-		10*time.Second,
+		cfg.ShutdownTimeout,
 	)
 	defer cancel()
 
