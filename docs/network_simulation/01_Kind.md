@@ -1,4 +1,4 @@
-In order to easily set up Kubernetes on local machines, I have adopted to use `kind` (Kubernetes in Docker).
+In order to easily set up Kubernetes on local machines, we are making use of `kind` (*k*ubernetes *in* *d*ocker).
 
 ### Basic Tests
 
