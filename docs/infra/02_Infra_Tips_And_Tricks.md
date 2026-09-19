@@ -27,7 +27,7 @@ kubectl explain deployment.spec.template.spec.containers | less
 For validating k8s manifests, use the tool [kubeconform](https://github.com/yannh/kubeconform)
 Validating manifests with it looks like
 ```shell
-kubectl kustomize infra/k8s/ | kubeconform -strict -summary
+kubectl kustomize infra/k8s/spectral | kubeconform -strict -summary
 ```
 
 After getting conforming kustomize output, dry-run `kubectl apply` before making changes
@@ -38,3 +38,8 @@ sudo kubectl apply -k infra/k8s/observability/ \
 ```
 `-k` flag applies all manifests in a directory to the cluster
 Note: apply a namespace manifest before running this, if creating a new namespace
+
+Check status of newly applied manifests
+```shell
+kubectrl rollout status deployment/spctrld -n spectrl
+```
