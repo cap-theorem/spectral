@@ -4,3 +4,6 @@ kind-up:
 
 kind-down:
 	kind delete cluster --name spectral-dev
+
+run:
+	go run ./cmd/spctrld

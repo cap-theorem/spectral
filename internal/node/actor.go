@@ -1,14 +1,19 @@
 package node
 
-import "context"
+import (
+	"context"
+	"log/slog"
+)
 
 type Actor struct {
-	inbox chan Message
+	inbox  chan Message
+	logger *slog.Logger
 }
 
-func NewActor() Actor {
+func NewActor(logger *slog.Logger) Actor {
 	return Actor{
-		inbox: make(chan Message, 100),
+		inbox:  make(chan Message, 100),
+		logger: logger,
 	}
 }
 
@@ -26,13 +31,13 @@ func (a *Actor) Run(ctx context.Context) {
 func (a *Actor) handle(msg Message) {
 	switch msg := msg.(type) {
 	case registerCommand:
-		println(msg.registration)
+		a.logger.Info("registration recieved", "endpoint", msg.registration.Endpoint)
 	case renewCommand:
-		println(msg.token)
+		a.logger.Info("", "token", msg.token)
 	case lookupCommand:
-		println(msg.service)
+		a.logger.Info("", "service", msg.service)
 	case statusCommand:
-		println("status command hit")
+		a.logger.Info("status command hit")
 	}
 }
 
