@@ -83,7 +83,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	starts.Add(signalCtx, 1)
+	starts.Add(signalCtx, 1) // TODO: temporarily sends a metric for testing. Should be removed later.
 
 	apiErrors := make(chan error, 1)
 
