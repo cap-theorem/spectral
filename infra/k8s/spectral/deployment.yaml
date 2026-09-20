@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spctrld
+spec:
+  replicas: 1 # for now :)
+  selector:
+    matchLabels:
+      app: spctrld
+  template:
+    metadata:
+      labels:
+        app: spctrld
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: spctrld
+          image: spctrld:dev
+          imagePullPolicy: Never # Use image loaded into kind instead of searching Docker Hub 
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: LOG_FORMAT
+              value: json
+            - name: OTEL_SERVICE_NAME
+              value: spctrld
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "5000"
+

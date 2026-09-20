@@ -1,0 +1,34 @@
+#!/usr/bin/env sh
+# From project root, run:
+# git config core.hooksPath scripts/git-hooks
+
+
+set -eu
+
+# Do not run if changes weren't on Go files
+if git diff --cached --quiet --diff-filter=ACMRD -- '*.go'; then
+  exit 0
+fi
+
+# Only check staged files
+echo "Checking formatting..."
+unformatted="$(
+  git diff --cached --quiet --diff-filter=ACMRD -- '*.go' |
+  while IFS= read -r file; do
+    if [ -f "$file" ]; then
+      gofmt -l "$file"
+    fi
+  done
+)"
+
+if [ -n "$unformatted" ]; then
+  echo "The following files were not formatted with gofmt:"
+  echo "$unformatted"
+  exit 1
+fi
+
+echo "Running go vet..."
+go vet ./...
+
+echo "Running Go tests..."
+go test ./...

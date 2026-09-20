@@ -1,0 +1,40 @@
+#!/usr/bin/env sh
+
+set -eu
+
+cluster="${KIND_CLUSTER:-spectral-dev}"
+
+required_tools="docker kind kubectl make"
+
+for tool in $required_tools; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "error: required tool not found: $tool" >&2
+    exit 1
+  fi
+done
+
+if ! docker info >/dev/null 2>&1; then
+  echo "error: cannot access Docker. consider running with sudo" >&2
+  exit 1
+fi
+
+if kind get clusters | grep -Fxq "$cluster"; then
+  echo "Using existing Kind cluster: $cluster"
+else
+  echo "Creating kind cluster: $cluster"
+  kind create cluster --config infra/kind/cluster.yaml
+fi
+
+echo "Configuring kubectl..."
+kind export kubeconfig --name "$cluster"
+
+echo "Deploying observability infrastructure..."
+make KIND_CLUSTER="$cluster" observability-apply
+
+echo "Building and deploying spctrld..."
+make KIND_CLUSTER="$cluster" spctrld-dev
+
+echo
+echo "🎉 Spectral development environment is ready!"
+echo "Use 'make spctrld-status' to inspect it."
+echo "Use 'make spctrld-logs' to follow logs."
