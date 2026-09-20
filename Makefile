@@ -59,6 +59,10 @@ spctrld-status:
 	kubectl get deployments,pods,services \
 		-n $(SPCTRLD_NAMESPACE) \
 		--output wide
+
+.PHONY: bootstrap
+bootstrap:
+	KIND_CLUSTER="$(KIND_CLUSTER)" ./scripts/bootstrap
 	
 run:
 	go run ./cmd/spctrld
