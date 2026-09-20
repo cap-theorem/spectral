@@ -31,3 +31,8 @@ Install the listed requirements, and set up the cluster with
 ```shell
 make bootstrap
 ```
+
+When you are done developing and need to delete the cluster, make sure to shut it down:
+```shell
+make kind-down
+```
