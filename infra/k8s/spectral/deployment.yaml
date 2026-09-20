@@ -15,7 +15,7 @@ spec:
       terminationGracePeriodSeconds: 15
       containers:
         - name: spctrld
-          image: spctrl:dev
+          image: spctrld:dev
           imagePullPolicy: Never # Use image loaded into kind instead of searching Docker Hub 
           ports:
             - name: http
