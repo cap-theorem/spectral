@@ -11,6 +11,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
   ./cmd/spctrld
 
 FROM gcr.io/distroless/static-debian13:nonroot
-COPY --from=build /out/spctrld /spectrld
+COPY --from=build /out/spctrld /spctrld
 
-ENTRYPOINT ["spectrld"]
+ENTRYPOINT ["/spctrld"]
