@@ -1,5 +1,5 @@
 KIND_CLUSTER := spectral-dev
-SPCTRLD_IMAGE := spctrl:dev
+SPCTRLD_IMAGE := spctrld:dev
 SPCTRLD_NAMESPACE := spectral
 SPCTRLD_DEPLOYMENT := spctrld
 
