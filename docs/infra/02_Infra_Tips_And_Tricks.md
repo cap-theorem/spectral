@@ -11,6 +11,8 @@ Checking the state of pods within a namespace
 ```shell
 kubectl get pods -n observability -o wide
 # Or use
+kubectl get pods -n observability --watch
+# Or use
 kubectl get deployments,pods,services,configmaps -n observability
 ```
 
