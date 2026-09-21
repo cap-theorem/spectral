@@ -12,17 +12,25 @@ import (
 
 	"github.com/cap-theorem/spectral/internal/api"
 	"github.com/cap-theorem/spectral/internal/config"
+	"github.com/cap-theorem/spectral/internal/daemon"
 	"github.com/cap-theorem/spectral/internal/metrics"
 	"github.com/cap-theorem/spectral/internal/node"
 	"github.com/golang-cz/devslog"
 )
 
 func main() {
-	if err := run(); err != nil {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("spctrld couldn't init", "error", err)
+		os.Exit(1)
+	}
+
+	if err = daemon.Run(cfg); err != nil {
 		slog.Error("spctrld stopped", "error", err)
 	}
 }
 
+// EVERYTHING BELOW IS LEGACT
 func newLogger(logFormat string) *slog.Logger {
 	// Makes a logger which can output in text for humans and json for containers.
 	slogOptions := &slog.HandlerOptions{
