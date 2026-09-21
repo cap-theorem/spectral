@@ -43,4 +43,4 @@ When you make changes to the spectral daemon while testing, update your local ku
 make spctrld-dev
 ```
 
-Which will build the daemon's docker image, push it to kind, and tell the cluster to restart spctrld pods with the updated version.
+Which will build the daemon's docker image, push it to kind, and tell the cluster to restart spctrld deployments with the updated version.
