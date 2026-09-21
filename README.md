@@ -38,7 +38,7 @@ make kind-down
 ```
 
 ### Development
-When you make changes to the spectral daemon, update your local kubernetes cluster with
+When you make changes to the spectral daemon while testing, update your local kubernetes cluster with
 ```shell
 make spctrld-dev
 ```
