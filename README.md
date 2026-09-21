@@ -36,3 +36,11 @@ When you are done developing and need to delete the cluster, make sure to shut i
 ```shell
 make kind-down
 ```
+
+### Development
+When you make changes to the spectral daemon, update your local kubernetes cluster with
+```shell
+make spctrld-dev
+```
+
+Which will build the daemon's docker image, push it to kind, and tell the cluster to restart spctrld pods with the updated version.
