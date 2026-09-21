@@ -19,7 +19,7 @@ type API struct {
 	logger *slog.Logger
 }
 
-func NewAPI(na *node.Actor, logger *slog.Logger) API {
+func NewAPI(na *node.Actor, logger *slog.Logger) *API {
 	r := chi.NewRouter()
 	r.Use(httplog.RequestLogger(logger, &httplog.Options{
 		Level:  slog.LevelInfo,
@@ -38,7 +38,7 @@ func NewAPI(na *node.Actor, logger *slog.Logger) API {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	return API{
+	return &API{
 		na,
 		server,
 		logger,

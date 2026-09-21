@@ -3,15 +3,52 @@ package node
 import (
 	"context"
 	"log/slog"
+	"time"
 )
+
+type State string
+
+const (
+	StateJoining State = "joining"
+	StateActive  State = "active"
+	StateLeaving State = "leaving"
+	StateLeft    State = "left"
+)
+
+type Registeration struct {
+	Service    string
+	InstanceID string
+	Endpoint   string
+	TTL        time.Duration
+}
+
+type Lease struct {
+	Token     string
+	TTL       time.Duration
+	ExpiresAt time.Time
+}
+
+// TODO: Move this out to another file
+type Provider struct {
+	Service    string
+	InstanceID string
+	Endpoint   string
+}
+
+// TODO: Move this out to another file
+type Status struct {
+	// Ready is a mix of state = active, transport ready, and live neighbors/peers > 0
+	Ready bool
+	State State
+}
 
 type Actor struct {
 	inbox  chan Message
 	logger *slog.Logger
 }
 
-func NewActor(logger *slog.Logger) Actor {
-	return Actor{
+func NewActor(logger *slog.Logger) *Actor {
+	return &Actor{
 		inbox:  make(chan Message, 100),
 		logger: logger,
 	}
