@@ -14,12 +14,12 @@ import (
 )
 
 type API struct {
-	na     *node.Actor
+	node   *node.Node
 	server *http.Server
 	logger *slog.Logger
 }
 
-func NewAPI(na *node.Actor, logger *slog.Logger) *API {
+func NewAPI(node *node.Node, logger *slog.Logger) *API {
 	r := chi.NewRouter()
 	r.Use(httplog.RequestLogger(logger, &httplog.Options{
 		Level:  slog.LevelInfo,
@@ -39,7 +39,7 @@ func NewAPI(na *node.Actor, logger *slog.Logger) *API {
 	}
 
 	return &API{
-		na,
+		node,
 		server,
 		logger,
 	}
@@ -57,7 +57,7 @@ func (a *API) Serve() error {
 }
 
 func (a *API) HandleLookup(w http.ResponseWriter, r *http.Request) {
-	a.na.Lookup(r.Context(), "payments-api")
+	a.node.Lookup(r.Context(), "payments-api")
 }
 
 func (a *API) Shutdown(ctx context.Context) error {

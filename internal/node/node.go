@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/cap-theorem/spectral/internal/wire"
 )
 
 type State string
@@ -42,19 +44,21 @@ type Status struct {
 	State State
 }
 
-type Actor struct {
+type Node struct {
+	self wire.Peer
+
 	inbox  chan Message
 	logger *slog.Logger
 }
 
-func NewActor(logger *slog.Logger) *Actor {
-	return &Actor{
+func NewNode(logger *slog.Logger) *Node {
+	return &Node{
 		inbox:  make(chan Message, 100),
 		logger: logger,
 	}
 }
 
-func (a *Actor) Run(ctx context.Context) {
+func (a *Node) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -65,7 +69,7 @@ func (a *Actor) Run(ctx context.Context) {
 	}
 }
 
-func (a *Actor) handle(msg Message) {
+func (a *Node) handle(msg Message) {
 	switch msg := msg.(type) {
 	case registerCommand:
 		a.logger.Info("registration recieved", "endpoint", msg.registration.Endpoint)
@@ -78,8 +82,8 @@ func (a *Actor) handle(msg Message) {
 	}
 }
 
-func (a *Actor) Register(ctx context.Context, reg Registeration) {}
-func (a *Actor) Lookup(ctx context.Context, service string) (Provider, error) {
+func (a *Node) Register(ctx context.Context, reg Registeration) {}
+func (a *Node) Lookup(ctx context.Context, service string) (Provider, error) {
 	replyChan := make(chan result[Provider], 1)
 
 	a.inbox <- lookupCommand{
@@ -96,5 +100,5 @@ func (a *Actor) Lookup(ctx context.Context, service string) (Provider, error) {
 
 	return result.value, nil
 }
-func (a *Actor) Renew(ctx context.Context, token string) {}
-func (a *Actor) Status(ctx context.Context)              {}
+func (a *Node) Renew(ctx context.Context, token string) {}
+func (a *Node) Status(ctx context.Context)              {}
