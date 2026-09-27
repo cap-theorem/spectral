@@ -53,12 +53,12 @@ func Run(cfg config.Config) error {
 
 	logger := newLogger(cfg.LogFormat)
 
-	node := node.NewActor(
-		logger.With("component", "node"),
-	)
 	api := api.NewAPI(
-		node,
 		logger.With("component", "api"),
+	)
+	node := node.NewNode(
+		logger.With("component", "node"),
+		api.Requests(),
 	)
 
 	g, stopping := errgroup.WithContext(sigCtx)

@@ -73,8 +73,8 @@ func run() error {
 	apiLogger := newLogger(cfg.LogFormat)
 	actorLogger := newLogger(cfg.LogFormat)
 	metricsLogger := newLogger(cfg.LogFormat)
-	na := node.NewActor(actorLogger.With("component", "actor"))
-	api := api.NewAPI(&na, apiLogger.With("component", "api"))
+	api := api.NewAPI(apiLogger.With("component", "api"))
+	na := node.NewNode(actorLogger.With("component", "actor"), api.Requests())
 
 	metricsPipeline, err := metrics.NewPipeline(
 		signalCtx,
@@ -96,6 +96,7 @@ func run() error {
 	apiErrors := make(chan error, 1)
 
 	go func() {
+		go na.Run(signalCtx)
 		apiErrors <- api.Serve()
 	}()
 
