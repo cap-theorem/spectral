@@ -14,12 +14,17 @@ import (
 )
 
 type API struct {
-	node   *node.Node
-	server *http.Server
-	logger *slog.Logger
+	requests chan node.Request
+	server   *http.Server
+	logger   *slog.Logger
 }
 
-func NewAPI(node *node.Node, logger *slog.Logger) *API {
+func NewAPI(logger *slog.Logger) *API {
+	a := &API{
+		requests: make(chan node.Request, 100),
+		logger:   logger,
+	}
+
 	r := chi.NewRouter()
 	r.Use(httplog.RequestLogger(logger, &httplog.Options{
 		Level:  slog.LevelInfo,
@@ -27,7 +32,10 @@ func NewAPI(node *node.Node, logger *slog.Logger) *API {
 	}))
 	r.Use(middleware.Timeout(5 * time.Second))
 
-	r.Get("/", HandleHello)
+	r.Post("/register", a.handleRegister)
+	r.Post("/renew", a.handleRenew)
+	r.Get("/lookup", a.handleLookup)
+	r.Get("/status", a.handleStatus)
 
 	server := &http.Server{
 		Addr:              ":8080",
@@ -38,11 +46,12 @@ func NewAPI(node *node.Node, logger *slog.Logger) *API {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	return &API{
-		node,
-		server,
-		logger,
-	}
+	a.server = server
+	return a
+}
+
+func (a *API) Requests() <-chan node.Request {
+	return a.requests
 }
 
 func (a *API) Serve() error {
@@ -56,8 +65,13 @@ func (a *API) Serve() error {
 	return err
 }
 
-func (a *API) HandleLookup(w http.ResponseWriter, r *http.Request) {
-	a.node.Lookup(r.Context(), "payments-api")
+func (a *API) enqueueRequest(ctx context.Context, request node.Request) error {
+	select {
+	case a.requests <- request:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (a *API) Shutdown(ctx context.Context) error {

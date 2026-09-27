@@ -3,58 +3,21 @@ package node
 import (
 	"context"
 	"log/slog"
-	"time"
 
 	"github.com/cap-theorem/spectral/internal/wire"
 )
 
-type State string
-
-const (
-	StateJoining State = "joining"
-	StateActive  State = "active"
-	StateLeaving State = "leaving"
-	StateLeft    State = "left"
-)
-
-type Registeration struct {
-	Service    string
-	InstanceID string
-	Endpoint   string
-	TTL        time.Duration
-}
-
-type Lease struct {
-	Token     string
-	TTL       time.Duration
-	ExpiresAt time.Time
-}
-
-// TODO: Move this out to another file
-type Provider struct {
-	Service    string
-	InstanceID string
-	Endpoint   string
-}
-
-// TODO: Move this out to another file
-type Status struct {
-	// Ready is a mix of state = active, transport ready, and live neighbors/peers > 0
-	Ready bool
-	State State
-}
-
 type Node struct {
 	self wire.Peer
 
-	inbox  chan Message
-	logger *slog.Logger
+	requests <-chan Request
+	logger   *slog.Logger
 }
 
-func NewNode(logger *slog.Logger) *Node {
+func NewNode(logger *slog.Logger, requests <-chan Request) *Node {
 	return &Node{
-		inbox:  make(chan Message, 100),
-		logger: logger,
+		requests: requests,
+		logger:   logger,
 	}
 }
 
@@ -63,42 +26,33 @@ func (a *Node) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-a.inbox:
-			a.handle(msg)
+		case req := <-a.requests:
+			a.handleRequest(req)
 		}
 	}
 }
 
-func (a *Node) handle(msg Message) {
-	switch msg := msg.(type) {
-	case registerCommand:
-		a.logger.Info("registration recieved", "endpoint", msg.registration.Endpoint)
-	case renewCommand:
-		a.logger.Info("", "token", msg.token)
-	case lookupCommand:
-		a.logger.Info("", "service", msg.service)
-	case statusCommand:
-		a.logger.Info("status command hit")
+func (a *Node) handleRequest(req Request) {
+	switch req := req.(type) {
+	case RegisterRequest:
+		a.logger.Info("registration received", "endpoint", req.Registration.Endpoint)
+	case RenewRequest:
+		a.logger.Info("renew request received", "token", req.Token)
+	case LookupRequest:
+		a.logger.Info("lookup request received", "service", req.Service)
+		if req.Reply != nil {
+			provider := Provider{Service: req.Service}
+			req.Reply <- Result[Provider]{
+				Value: provider,
+			}
+		}
+	case StatusRequest:
+		a.logger.Info("status request received")
+		if req.Reply != nil {
+			status := Status{Ready: true, State: StateActive}
+			req.Reply <- Result[Status]{
+				Value: status,
+			}
+		}
 	}
 }
-
-func (a *Node) Register(ctx context.Context, reg Registeration) {}
-func (a *Node) Lookup(ctx context.Context, service string) (Provider, error) {
-	replyChan := make(chan result[Provider], 1)
-
-	a.inbox <- lookupCommand{
-		ctx:     ctx,
-		service: service,
-		reply:   replyChan,
-	}
-
-	// Block until we get response
-	result := <-replyChan
-	if result.err != nil {
-		return Provider{}, result.err
-	}
-
-	return result.value, nil
-}
-func (a *Node) Renew(ctx context.Context, token string) {}
-func (a *Node) Status(ctx context.Context)              {}
