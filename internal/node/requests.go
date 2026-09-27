@@ -2,7 +2,7 @@ package node
 
 import "context"
 
-// Request is a request submitted to the node actor.
+// Request is an API request submitted to the node actor from the local API.
 type Request interface {
 	isRequest()
 }
