@@ -79,10 +79,13 @@ func (a *Node) registerService(reg Registration) (Lease, error) {
 		return Lease{}, ErrRegistrationAlreadyExists
 	}
 
-	var token [32]byte
-	rand.Read(token[:]) // crypto/rand.Read always fills the buffer or terminates the process.
+	token, err := generateHexToken(32)
+	if err != nil {
+		return Lease{}, ErrTokenGenerationFail
+	}
+
 	lease := Lease{
-		Token:     hex.EncodeToString(token[:]),
+		Token:     token,
 		ExpiresAt: now.Add(reg.TTL),
 		TTL:       reg.TTL,
 	}
@@ -95,4 +98,12 @@ func (a *Node) registerService(reg Registration) (Lease, error) {
 		},
 	}
 	return lease, nil
+}
+
+func generateHexToken(byteLength int) (string, error) {
+	b := make([]byte, byteLength)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

@@ -8,6 +8,7 @@ import (
 var (
 	ErrRegistrationAlreadyExists = errors.New("this registration already exists")
 	ErrInvalidRegistration       = errors.New("invalid registration")
+	ErrTokenGenerationFail       = errors.New("failed to generate token")
 )
 
 // Request is an API request submitted to the node actor from the local API.
