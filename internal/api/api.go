@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/cap-theorem/spectral/internal/node"
@@ -19,7 +20,11 @@ type API struct {
 	logger   *slog.Logger
 }
 
-func NewAPI(logger *slog.Logger) *API {
+type APIConfig struct {
+	Port int
+}
+
+func NewAPI(cfg APIConfig, logger *slog.Logger) *API {
 	a := &API{
 		requests: make(chan node.Request, 100),
 		logger:   logger,
@@ -38,7 +43,7 @@ func NewAPI(logger *slog.Logger) *API {
 	r.Get("/status", a.handleStatus)
 
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              ":" + strconv.Itoa(cfg.Port),
 		Handler:           r,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,

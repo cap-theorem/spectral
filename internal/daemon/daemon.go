@@ -43,7 +43,7 @@ func newLogger(logFormat string) *slog.Logger {
 	return slog.New(handler)
 }
 
-func Run(cfg config.Config) error {
+func Run(cfg config.DaemonCLIConfig) error {
 	sigCtx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
@@ -54,6 +54,9 @@ func Run(cfg config.Config) error {
 	logger := newLogger(cfg.LogFormat)
 
 	api := api.NewAPI(
+		api.APIConfig{
+			Port: cfg.APIPort,
+		},
 		logger.With("component", "api"),
 	)
 	node := node.NewNode(
@@ -77,7 +80,7 @@ func Run(cfg config.Config) error {
 
 		ctx, cancel := context.WithTimeout(
 			context.Background(),
-			cfg.ShutdownTimeout,
+			cfg.DrainTimeout,
 		)
 		defer cancel()
 
