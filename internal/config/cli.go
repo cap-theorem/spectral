@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"time"
 
@@ -15,6 +16,8 @@ type DaemonCLIConfig struct {
 	TLSCert string `name:"tls-cert" required:"" type:"existingfile" help:"Node certificate file."`
 	TLSKey  string `name:"tls-key" required:"" type:"existingfile" help:"Node private key file."`
 	TLSCA   string `name:"tls-ca" required:"" type:"existingfile" help:"Trusted CA bundle."`
+
+	Bootstrap []string `name:"bootstrap" sep:"none" help:"Existing peer host:port to contact when joining. May be repeated."`
 
 	LogLevel  string `name:"log-level" default:"info" enum:"debug,info,warn,error" help:"Logging level."`
 	LogFormat string `name:"log-format" default:"text" enum:"text,json" help:"Log format."`
@@ -39,6 +42,13 @@ func (d *DaemonCLIConfig) Validate() error {
 
 	if d.DrainTimeout < 0 {
 		return fmt.Errorf("--drain-timeout must be a positive value")
+	}
+
+	for _, addr := range d.Bootstrap {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil || host == "" || port == "" {
+			return fmt.Errorf("--bootstrap address must have valid host and port.")
+		}
 	}
 
 	return nil
