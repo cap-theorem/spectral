@@ -13,9 +13,9 @@ type DaemonCLIConfig struct {
 	APIPort    int            `name:"api-port" help:"Port to host local HTTP API on." default:"8000"`
 	ListenAddr netip.AddrPort `name:"listen-addr" help:"QUIC listen IP and port." required:""`
 
-	TLSCert string `name:"tls-cert" required:"" type:"existingfile" help:"Node certificate file."`
-	TLSKey  string `name:"tls-key" required:"" type:"existingfile" help:"Node private key file."`
-	TLSCA   string `name:"tls-ca" required:"" type:"existingfile" help:"Trusted CA bundle."`
+	TLSCert string `name:"tls-cert" type:"existingfile" help:"Node certificate file."`
+	TLSKey  string `name:"tls-key" type:"existingfile" help:"Node private key file."`
+	TLSCA   string `name:"tls-ca" type:"existingfile" help:"Trusted CA bundle."`
 
 	Bootstrap []string `name:"bootstrap" sep:"none" help:"Existing peer host:port to contact when joining. May be repeated."`
 
