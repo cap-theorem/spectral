@@ -13,45 +13,16 @@ import (
 	"github.com/cap-theorem/spectral/internal/api"
 	"github.com/cap-theorem/spectral/internal/config"
 	"github.com/cap-theorem/spectral/internal/node"
-	"github.com/golang-cz/devslog"
 	"golang.org/x/sync/errgroup"
 )
 
-// TODO: Move this to logger package
-func newLogger(logFormat string) *slog.Logger {
-	// Makes a logger which can output in text for humans and json for containers.
-	slogOptions := &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}
-
-	var handler slog.Handler
-
-	switch logFormat {
-	case "json":
-		handler = slog.NewJSONHandler(os.Stdout, slogOptions)
-	default:
-		handler = devslog.NewHandler(os.Stdout, &devslog.Options{
-			HandlerOptions: slogOptions,
-			SortKeys:       true,
-			DebugColor:     devslog.Blue,
-			InfoColor:      devslog.Green,
-			WarnColor:      devslog.Yellow,
-			ErrorColor:     devslog.Red,
-		})
-	}
-
-	return slog.New(handler)
-}
-
-func Run(cfg config.DaemonCLIConfig) error {
+func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 	sigCtx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
 	nodeCtx, stopNode := context.WithCancel(context.Background())
-
-	logger := newLogger(cfg.LogFormat)
 
 	node := node.NewNode(
 		logger.With("component", "node"),

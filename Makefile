@@ -63,6 +63,21 @@ spctrld-status:
 .PHONY: bootstrap
 bootstrap:
 	KIND_CLUSTER="$(KIND_CLUSTER)" ./scripts/bootstrap
-	
+
+# Pass daemon flags through RUN_ARGS, e.g.
+# make run RUN_ARGS="--listen-addr 127.0.0.1:7000"
+.PHONY: run
 run:
-	go run ./cmd/spctrld
+	go run ./cmd/spctrld $(RUN_ARGS)
+
+.PHONY: test
+test:
+	go test ./...
+
+.PHONY: test-race
+test-race:
+	go test -race -shuffle=on ./...
+
+.PHONY: vet
+vet:
+	go vet ./...
