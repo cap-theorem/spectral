@@ -15,57 +15,107 @@ type Node struct {
 
 	registrations map[RegistrationKey]RegistrationEntry
 
-	requests <-chan Request
-	logger   *slog.Logger
+	inbox  chan request
+	logger *slog.Logger
 }
 
-func NewNode(logger *slog.Logger, requests <-chan Request) *Node {
+func NewNode(logger *slog.Logger) *Node {
 	return &Node{
 		registrations: make(map[RegistrationKey]RegistrationEntry),
-		requests:      requests,
+		inbox:         make(chan request, 100),
 		logger:        logger,
 	}
 }
 
-func (a *Node) Run(ctx context.Context) {
+func (n *Node) Register(ctx context.Context, reg Registration) (Lease, error) {
+	req := registerRequest{Registration: reg, Reply: make(chan result[Lease], 1)}
+
+	select {
+	case n.inbox <- req:
+	case <-ctx.Done():
+		return Lease{}, ctx.Err()
+	}
+
+	select {
+	case res := <-req.Reply:
+		return res.Value, res.Err
+	case <-ctx.Done():
+		return Lease{}, ctx.Err()
+	}
+}
+
+func (n *Node) Renew(ctx context.Context, token string) error {
+	select {
+	case n.inbox <- renewRequest{Token: token}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (n *Node) Lookup(ctx context.Context, service string) (Provider, error) {
+	req := lookupRequest{Service: service, Reply: make(chan result[Provider], 1)}
+
+	select {
+	case n.inbox <- req:
+	case <-ctx.Done():
+		return Provider{}, ctx.Err()
+	}
+
+	select {
+	case res := <-req.Reply:
+		return res.Value, res.Err
+	case <-ctx.Done():
+		return Provider{}, ctx.Err()
+	}
+}
+
+func (n *Node) Status(ctx context.Context) (Status, error) {
+	req := statusRequest{Reply: make(chan result[Status], 1)}
+
+	select {
+	case n.inbox <- req:
+	case <-ctx.Done():
+		return Status{}, ctx.Err()
+	}
+
+	select {
+	case res := <-req.Reply:
+		return res.Value, res.Err
+	case <-ctx.Done():
+		return Status{}, ctx.Err()
+	}
+}
+
+func (n *Node) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case req := <-a.requests:
-			a.handleRequest(req)
+		case req := <-n.inbox:
+			n.handleRequest(req)
 		}
 	}
 }
 
-func (a *Node) handleRequest(req Request) {
+func (n *Node) handleRequest(req request) {
 	switch req := req.(type) {
-	case RegisterRequest:
-		a.logger.Info("registration received", "endpoint", req.Registration.Endpoint)
-		lease, err := a.registerService(req.Registration)
-		req.Reply <- Result[Lease]{Value: lease, Err: err}
-	case RenewRequest:
-		a.logger.Info("renew request received", "token", req.Token)
-	case LookupRequest:
-		a.logger.Info("lookup request received", "service", req.Service)
-		if req.Reply != nil {
-			provider := Provider{Service: req.Service}
-			req.Reply <- Result[Provider]{
-				Value: provider,
-			}
-		}
-	case StatusRequest:
-		a.logger.Info("status request received")
-		if req.Reply != nil {
-			status := Status{Ready: true, State: StateActive}
-			req.Reply <- Result[Status]{
-				Value: status,
-			}
-		}
+	case registerRequest:
+		n.logger.Info("registration received", "endpoint", req.Registration.Endpoint)
+		lease, err := n.registerService(req.Registration)
+		req.Reply <- result[Lease]{Value: lease, Err: err}
+	case renewRequest:
+		n.logger.Info("renew request received", "token", req.Token)
+	case lookupRequest:
+		n.logger.Info("lookup request received", "service", req.Service)
+		req.Reply <- result[Provider]{Value: Provider{Service: req.Service}}
+	case statusRequest:
+		n.logger.Info("status request received")
+		req.Reply <- result[Status]{Value: Status{Ready: true, State: StateActive}}
 	}
 }
 
-func (a *Node) registerService(reg Registration) (Lease, error) {
+func (n *Node) registerService(reg Registration) (Lease, error) {
 	if err := reg.Validate(); err != nil {
 		return Lease{}, err
 	}
@@ -75,7 +125,7 @@ func (a *Node) registerService(reg Registration) (Lease, error) {
 		InstanceID: reg.InstanceID,
 	}
 	now := time.Now()
-	if existing, ok := a.registrations[key]; ok && now.Before(existing.Lease.ExpiresAt) {
+	if existing, ok := n.registrations[key]; ok && now.Before(existing.Lease.ExpiresAt) {
 		return Lease{}, ErrRegistrationAlreadyExists
 	}
 
@@ -89,7 +139,7 @@ func (a *Node) registerService(reg Registration) (Lease, error) {
 		ExpiresAt: now.Add(reg.TTL),
 		TTL:       reg.TTL,
 	}
-	a.registrations[key] = RegistrationEntry{
+	n.registrations[key] = RegistrationEntry{
 		Lease: lease,
 		Provider: Provider{
 			Service:    reg.Service,

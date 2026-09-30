@@ -53,15 +53,15 @@ func Run(cfg config.DaemonCLIConfig) error {
 
 	logger := newLogger(cfg.LogFormat)
 
+	node := node.NewNode(
+		logger.With("component", "node"),
+	)
 	api := api.NewAPI(
 		api.APIConfig{
 			Port: cfg.APIPort,
 		},
+		node,
 		logger.With("component", "api"),
-	)
-	node := node.NewNode(
-		logger.With("component", "node"),
-		api.Requests(),
 	)
 
 	g, stopping := errgroup.WithContext(sigCtx)
