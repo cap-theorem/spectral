@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"time"
@@ -19,8 +20,8 @@ type DaemonCLIConfig struct {
 
 	Bootstrap []string `name:"bootstrap" sep:"none" help:"Existing peer host:port to contact when joining. May be repeated."`
 
-	LogLevel  string `name:"log-level" default:"info" enum:"debug,info,warn,error" help:"Logging level."`
-	LogFormat string `name:"log-format" default:"text" enum:"text,json" help:"Log format."`
+	LogLevel  slog.Level `name:"log-level" default:"info" help:"Log level: debug, info, warn, error."`
+	LogFormat string     `name:"log-format" default:"text" enum:"text,json" help:"Log format."`
 
 	DrainTimeout time.Duration `name:"drain-timeout" default:"30s" help:"Graceful shutdown timeout."`
 }

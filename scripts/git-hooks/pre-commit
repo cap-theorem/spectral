@@ -13,7 +13,7 @@ fi
 # Only check staged files
 echo "Checking formatting..."
 unformatted="$(
-  git diff --cached --quiet --diff-filter=ACMRD -- '*.go' |
+  git diff --cached --name-only --diff-filter=ACMR -- '*.go' |
   while IFS= read -r file; do
     if [ -f "$file" ]; then
       gofmt -l "$file"
