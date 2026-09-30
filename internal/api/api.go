@@ -15,19 +15,19 @@ import (
 )
 
 type API struct {
-	requests chan node.Request
-	server   *http.Server
-	logger   *slog.Logger
+	node   *node.Node
+	server *http.Server
+	logger *slog.Logger
 }
 
 type APIConfig struct {
 	Port int
 }
 
-func NewAPI(cfg APIConfig, logger *slog.Logger) *API {
+func NewAPI(cfg APIConfig, n *node.Node, logger *slog.Logger) *API {
 	a := &API{
-		requests: make(chan node.Request, 100),
-		logger:   logger,
+		node:   n,
+		logger: logger,
 	}
 
 	r := chi.NewRouter()
@@ -55,10 +55,6 @@ func NewAPI(cfg APIConfig, logger *slog.Logger) *API {
 	return a
 }
 
-func (a *API) Requests() <-chan node.Request {
-	return a.requests
-}
-
 func (a *API) Serve() error {
 	a.logger.Info("API server starting", "address", "http://localhost"+a.server.Addr)
 	err := a.server.ListenAndServe()
@@ -68,15 +64,6 @@ func (a *API) Serve() error {
 	}
 
 	return err
-}
-
-func (a *API) enqueueRequest(ctx context.Context, request node.Request) error {
-	select {
-	case a.requests <- request:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 func (a *API) Shutdown(ctx context.Context) error {

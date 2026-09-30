@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -21,56 +22,39 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reply := make(chan node.Result[node.Lease], 1)
-	if err := a.enqueueRequest(r.Context(), node.RegisterRequest{
-		Ctx: r.Context(),
-		Registration: node.Registration{
-			Service:    reg.Service,
-			InstanceID: reg.InstanceID,
-			Endpoint:   reg.Endpoint,
-			TTL:        ttl,
-		},
-		Reply: reply,
-	}); err != nil {
-		writeError(w, http.StatusGatewayTimeout, err)
-		return
-	}
-
-	var res node.Result[node.Lease]
-	select {
-	case res = <-reply:
-	case <-r.Context().Done():
-		writeError(w, http.StatusGatewayTimeout, r.Context().Err())
-		return
-	}
-	if res.Err != nil {
+	lease, err := a.node.Register(r.Context(), node.Registration{
+		Service:    reg.Service,
+		InstanceID: reg.InstanceID,
+		Endpoint:   reg.Endpoint,
+		TTL:        ttl,
+	})
+	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
-		case errors.Is(res.Err, node.ErrInvalidRegistration):
+		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+			status = http.StatusGatewayTimeout
+		case errors.Is(err, node.ErrInvalidRegistration):
 			status = http.StatusBadRequest
-		case errors.Is(res.Err, node.ErrRegistrationAlreadyExists):
+		case errors.Is(err, node.ErrRegistrationAlreadyExists):
 			status = http.StatusConflict
 		}
-		writeError(w, status, res.Err)
+		writeError(w, status, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(LeaseResponse{
-		Token:     res.Value.Token,
-		TTL:       res.Value.TTL.String(),
-		ExpiresAt: res.Value.ExpiresAt,
+		Token:     lease.Token,
+		TTL:       lease.TTL.String(),
+		ExpiresAt: lease.ExpiresAt,
 	}); err != nil {
 		a.logger.Error("write registration response", "error", err)
 	}
 }
 
 func (a *API) handleRenew(w http.ResponseWriter, r *http.Request) {
-	if err := a.enqueueRequest(r.Context(), node.RenewRequest{
-		Ctx:   r.Context(),
-		Token: "mock-lease-token",
-	}); err != nil {
+	if err := a.node.Renew(r.Context(), "mock-lease-token"); err != nil {
 		writeError(w, http.StatusGatewayTimeout, err)
 		return
 	}
@@ -79,55 +63,38 @@ func (a *API) handleRenew(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleLookup(w http.ResponseWriter, r *http.Request) {
-	reply := make(chan node.Result[node.Provider], 1)
-	if err := a.enqueueRequest(r.Context(), node.LookupRequest{
-		Ctx:     r.Context(),
-		Service: "payments-api",
-		Reply:   reply,
-	}); err != nil {
-		writeError(w, http.StatusGatewayTimeout, err)
+	provider, err := a.node.Lookup(r.Context(), "payments-api")
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			status = http.StatusGatewayTimeout
+		}
+		writeError(w, status, err)
 		return
 	}
 
-	select {
-	case result := <-reply:
-		if result.Err != nil {
-			writeError(w, http.StatusInternalServerError, result.Err)
-			return
-		}
-		writeJSON(w, ProviderResponse{
-			Service:    result.Value.Service,
-			InstanceID: result.Value.InstanceID,
-			Endpoint:   result.Value.Endpoint,
-		})
-	case <-r.Context().Done():
-		writeError(w, http.StatusGatewayTimeout, r.Context().Err())
-	}
+	writeJSON(w, ProviderResponse{
+		Service:    provider.Service,
+		InstanceID: provider.InstanceID,
+		Endpoint:   provider.Endpoint,
+	})
 }
 
 func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
-	reply := make(chan node.Result[node.Status], 1)
-	if err := a.enqueueRequest(r.Context(), node.StatusRequest{
-		Ctx:   r.Context(),
-		Reply: reply,
-	}); err != nil {
-		writeError(w, http.StatusGatewayTimeout, err)
+	status, err := a.node.Status(r.Context())
+	if err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			code = http.StatusGatewayTimeout
+		}
+		writeError(w, code, err)
 		return
 	}
 
-	select {
-	case result := <-reply:
-		if result.Err != nil {
-			writeError(w, http.StatusInternalServerError, result.Err)
-			return
-		}
-		writeJSON(w, StatusResponse{
-			Ready: result.Value.Ready,
-			State: string(result.Value.State),
-		})
-	case <-r.Context().Done():
-		writeError(w, http.StatusGatewayTimeout, r.Context().Err())
-	}
+	writeJSON(w, StatusResponse{
+		Ready: status.Ready,
+		State: string(status.State),
+	})
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {

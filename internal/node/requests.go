@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"errors"
 )
 
@@ -11,40 +10,35 @@ var (
 	ErrTokenGenerationFail       = errors.New("failed to generate token")
 )
 
-// Request is an API request submitted to the node actor from the local API.
-type Request interface {
+// request is a message submitted to the node's inbox by one of its exported methods.
+type request interface {
 	isRequest()
 }
 
-type Result[T any] struct {
+type result[T any] struct {
 	Value T
 	Err   error
 }
 
-type RegisterRequest struct {
-	Ctx          context.Context
+type registerRequest struct {
 	Registration Registration
-	Reply        chan Result[Lease]
+	Reply        chan result[Lease]
 }
 
-type RenewRequest struct {
-	Ctx   context.Context
+type renewRequest struct {
 	Token string
-	Reply chan Result[Lease]
 }
 
-type LookupRequest struct {
-	Ctx     context.Context
+type lookupRequest struct {
 	Service string
-	Reply   chan Result[Provider]
+	Reply   chan result[Provider]
 }
 
-type StatusRequest struct {
-	Ctx   context.Context
-	Reply chan Result[Status]
+type statusRequest struct {
+	Reply chan result[Status]
 }
 
-func (RegisterRequest) isRequest() {}
-func (RenewRequest) isRequest()    {}
-func (LookupRequest) isRequest()   {}
-func (StatusRequest) isRequest()   {}
+func (registerRequest) isRequest() {}
+func (renewRequest) isRequest()    {}
+func (lookupRequest) isRequest()   {}
+func (statusRequest) isRequest()   {}
