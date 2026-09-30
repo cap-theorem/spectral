@@ -1,17 +1,8 @@
 # Spectral
 
-`spectral` is an experimental decentralized service-discovery system for high-churn environments.
+Spectral is an experimental service discovery system for environments for where service instances frequently start, stop, or fail (i.e. distributed systems). Its goal is to let applications find available service instances without depending on a central registry.
 
-Each sidecar participates in a sparse expander overlay, advertises local services, and discovers live providers without relying on a central registry. The design combines DEX-inspired graph maintenance with randomized discovery and epoch-based topology resizing.
-
-## How It Works
-
-- Constant-degree expander overlay for scalable connectivity
-- Randomized walks for membership sampling
-- Parallel multi-path service lookups
-- Stable node identities across topology epochs
-- Join, graceful-leave, and crash handling
-- Inflation and deflation as population changes
+The intended deployment runs a Spectral daemon alongside each application used within a system. These daemons communicate with one another to discover services across a network (currently simulated with Kubernetes). Each daemon maintains connections to a small number of peers, keeping the network connected without requiring every daemon to connect to every other daemon. We are attempting to use expander graphs in order to keep this network reliable.
 
 ## Quick Start
 
