@@ -9,6 +9,12 @@ configMapGenerator:
   - name: grafana-datasources
     files:
       - datasource.yaml
+  - name: grafana-dashboard-provider
+    files:
+      - dashboard-provider.yaml
+  - name: grafana-dashboards
+    files:
+      - dashboards/test.json
 
 secretGenerator:
   - name: grafana-admin
