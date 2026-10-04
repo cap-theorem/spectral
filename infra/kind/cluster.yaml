@@ -4,3 +4,8 @@ name: spectral-dev
 
 nodes:
   - role: control-plane
+    extraPortMappings:
+      - containerPort: 30000
+        hostPort: 3000
+        listenAddress: "127.0.0.1"
+        protocol: TCP

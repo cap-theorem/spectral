@@ -3,10 +3,11 @@ kind: Service
 metadata:
   name: grafana
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: grafana
   ports:
     - name: http
       port: 3000
       targetPort: http
+      nodePort: 30000
