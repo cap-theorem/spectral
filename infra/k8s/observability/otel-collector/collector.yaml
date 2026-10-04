@@ -7,6 +7,11 @@ receivers:
 exporters:
   debug:
     verbosity: detailed
+  prometheus_remote_write:
+    http:
+      endpoint: http://prometheus:9090/api/v1/write
+      tls:
+        insecure: true
 
 service:
   pipelines:
