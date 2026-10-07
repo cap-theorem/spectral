@@ -16,6 +16,13 @@ observability-apply:
 	kubectl rollout status deployment/otel-collector \
 		-n observability \
 		--timeout=120s
+	kubectl rollout status deployment/prometheus \
+		-n observability \
+		--timeout=120s
+	kubectl rollout status deployment/grafana \
+		-n observability \
+		--timeout=120s
+
 
 .PHONY: spctrld-build
 spctrld-build:
