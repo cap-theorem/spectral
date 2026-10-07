@@ -20,6 +20,10 @@ func TestDaemonCLIConfig(t *testing.T) {
 		{"negative drain", []string{"--listen-addr", "127.0.0.1:7000", "--drain-timeout", "-1s"}, true},
 		{"bad log level", []string{"--listen-addr", "127.0.0.1:7000", "--log-level", "nope"}, true},
 		{"bad log format", []string{"--listen-addr", "127.0.0.1:7000", "--log-format", "xml"}, true},
+		{"ipv6 listen addr", []string{"--listen-addr", "[fd7a:115c:a1e0::1]:7000"}, false},
+		{"unspecified listen addr", []string{"--listen-addr", "0.0.0.0:7000"}, true},
+		{"unspecified ipv6 listen addr", []string{"--listen-addr", "[::]:7000"}, true},
+		{"listen port 0", []string{"--listen-addr", "127.0.0.1:0"}, true},
 	}
 
 	for _, tt := range tests {
