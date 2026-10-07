@@ -9,6 +9,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/cap-theorem/spectral/internal/transport"
 	"github.com/cap-theorem/spectral/internal/wire"
 )
 
@@ -17,15 +18,16 @@ type Node struct {
 
 	registrations map[RegistrationKey]RegistrationEntry
 
-	inbox  chan request
-	logger *slog.Logger
+	inbox     chan request
+	transport transport.Transport
+	logger    *slog.Logger
 }
 
 type NodeConfig struct {
 	ListenAddr netip.AddrPort
 }
 
-func NewNode(cfg NodeConfig, logger *slog.Logger) *Node {
+func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node {
 	return &Node{
 		self: wire.Peer{
 			ID:      uuid.NewV4(),
@@ -33,6 +35,7 @@ func NewNode(cfg NodeConfig, logger *slog.Logger) *Node {
 		},
 		registrations: make(map[RegistrationKey]RegistrationEntry),
 		inbox:         make(chan request, 100),
+		transport:     tr,
 		logger:        logger,
 	}
 }
@@ -106,6 +109,8 @@ func (n *Node) Run(ctx context.Context) {
 			return
 		case req := <-n.inbox:
 			n.handleRequest(req)
+		case env := <-n.transport.Recv():
+			n.handleEnvelope(env)
 		}
 	}
 }
@@ -125,6 +130,24 @@ func (n *Node) handleRequest(req request) {
 		n.logger.Info("status request received")
 		req.Reply <- result[Status]{Value: Status{Ready: true, State: StateActive}}
 	}
+}
+
+func (n *Node) handleEnvelope(env wire.Envelope) {
+	switch msg := env.Msg.(type) {
+	case wire.Ping:
+		n.logger.Debug("ping received", "from", env.From.ID)
+		n.send(env.From, wire.Pong{Nonce: msg.Nonce})
+	case wire.Pong:
+		n.logger.Info("pong received", "from", env.From.ID, "address", env.From.Address)
+	}
+}
+
+func (n *Node) send(to wire.Peer, msg wire.Message) {
+	n.transport.Send(to.Address, wire.Envelope{
+		From: n.self,
+		To:   to.ID,
+		Msg:  msg,
+	})
 }
 
 func (n *Node) registerService(reg Registration) (Lease, error) {

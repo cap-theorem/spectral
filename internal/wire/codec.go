@@ -75,6 +75,10 @@ func decodeBody(k Kind, body []byte) (Message, error) {
 		var m Ping
 		err := json.Unmarshal(body, &m)
 		return m, err
+	case KindPong:
+		var m Pong
+		err := json.Unmarshal(body, &m)
+		return m, err
 	// Add more Kinds here
 	default:
 		return nil, ErrUnknownKind

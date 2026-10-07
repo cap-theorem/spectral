@@ -38,3 +38,9 @@ type Ping struct {
 }
 
 func (Ping) Kind() Kind { return KindPing }
+
+type Pong struct {
+	Nonce uint64 `json:"nonce"`
+}
+
+func (Pong) Kind() Kind { return KindPong }
