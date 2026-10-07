@@ -1,5 +1,6 @@
-// In-memory transport for testing nodes in one process, without a real network.
-// Messages use the real codec but arrive instantly and in order, so it does not test real network conditions.
+// In-memory transport implementation used for unit tests.
+// It runs on a single process and delivers everything quickly and in-order, so don't use this to simulate network conditions.
+// Used to verify message response and effects on nodes.
 
 package transport
 
