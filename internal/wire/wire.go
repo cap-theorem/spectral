@@ -2,7 +2,7 @@ package wire
 
 import "uuid"
 
-type NodeID uuid.UUID
+type NodeID = uuid.UUID
 
 type Peer struct {
 	ID NodeID `json:"id"`
