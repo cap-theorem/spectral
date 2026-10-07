@@ -13,6 +13,7 @@ import (
 	"github.com/cap-theorem/spectral/internal/api"
 	"github.com/cap-theorem/spectral/internal/config"
 	"github.com/cap-theorem/spectral/internal/node"
+	"github.com/cap-theorem/spectral/internal/transport"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -24,10 +25,14 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 	)
 	nodeCtx, stopNode := context.WithCancel(context.Background())
 
+	// TODO: replace with the QUIC transport
+	tr := transport.NewMemNetwork().Join(cfg.ListenAddr)
+
 	node := node.NewNode(
 		node.NodeConfig{
 			ListenAddr: cfg.ListenAddr,
 		},
+		tr,
 		logger.With("component", "node"),
 	)
 	api := api.NewAPI(
