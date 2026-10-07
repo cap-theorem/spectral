@@ -25,6 +25,9 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 	nodeCtx, stopNode := context.WithCancel(context.Background())
 
 	node := node.NewNode(
+		node.NodeConfig{
+			ListenAddr: cfg.ListenAddr,
+		},
 		logger.With("component", "node"),
 	)
 	api := api.NewAPI(

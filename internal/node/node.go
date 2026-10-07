@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"net/netip"
 	"time"
+	"uuid"
 
 	"github.com/cap-theorem/spectral/internal/wire"
 )
@@ -19,8 +21,16 @@ type Node struct {
 	logger *slog.Logger
 }
 
-func NewNode(logger *slog.Logger) *Node {
+type NodeConfig struct {
+	ListenAddr netip.AddrPort
+}
+
+func NewNode(cfg NodeConfig, logger *slog.Logger) *Node {
 	return &Node{
+		self: wire.Peer{
+			ID:      uuid.NewV4(),
+			Address: cfg.ListenAddr,
+		},
 		registrations: make(map[RegistrationKey]RegistrationEntry),
 		inbox:         make(chan request, 100),
 		logger:        logger,
@@ -88,6 +98,8 @@ func (n *Node) Status(ctx context.Context) (Status, error) {
 }
 
 func (n *Node) Run(ctx context.Context) {
+	n.logger.Info("node started", "id", n.self.ID, "address", n.self.Address)
+
 	for {
 		select {
 		case <-ctx.Done():

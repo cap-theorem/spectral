@@ -11,7 +11,8 @@ import (
 )
 
 type DaemonCLIConfig struct {
-	APIPort    int            `name:"api-port" help:"Port to host local HTTP API on." default:"8000"`
+	APIPort int `name:"api-port" help:"Port to host local HTTP API on." default:"8000"`
+	// TODO: add advertise addr when implementing support for nodes behind NATs
 	ListenAddr netip.AddrPort `name:"listen-addr" help:"QUIC listen IP and port." required:""`
 
 	TLSCert string `name:"tls-cert" type:"existingfile" help:"Node certificate file."`
@@ -39,6 +40,10 @@ func (d *DaemonCLIConfig) Validate() error {
 
 	if !d.ListenAddr.IsValid() {
 		return fmt.Errorf("--listen-addr must contain a valid IP and port (i.e 127.0.0.1:8080)")
+	}
+
+	if d.ListenAddr.Addr().IsUnspecified() || d.ListenAddr.Port() == 0 {
+		return fmt.Errorf("--listen-addr must be a specific IP and port that peers can dial (not 0.0.0.0, :: or port 0)")
 	}
 
 	if d.DrainTimeout < 0 {
