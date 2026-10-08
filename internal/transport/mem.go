@@ -11,6 +11,8 @@ import (
 	"github.com/cap-theorem/spectral/internal/wire"
 )
 
+var _ Transport = (*Mem)(nil)
+
 type MemNetwork struct {
 	mu    sync.Mutex
 	nodes map[netip.AddrPort]*Mem
