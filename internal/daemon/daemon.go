@@ -18,15 +18,23 @@ import (
 )
 
 func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
+	tr, err := transport.NewQuic(
+		transport.QuicConfig{
+			ListenAddr: cfg.ListenAddr,
+		},
+		logger.With("component", "quic"),
+	)
+	if err != nil {
+		logger.Error("failed to initialize quic transport", "err", err)
+		return err
+	}
+
 	sigCtx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
 	nodeCtx, stopNode := context.WithCancel(context.Background())
-
-	// TODO: replace with the QUIC transport
-	tr := transport.NewMemNetwork().Join(cfg.ListenAddr)
 
 	node := node.NewNode(
 		node.NodeConfig{
@@ -72,6 +80,13 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 		}
 
 		stopNode()
+
+		if err := tr.Close(); err != nil {
+			shutdownErr = errors.Join(
+				shutdownErr,
+				fmt.Errorf("transport close: %w", err),
+			)
+		}
 
 		return nil
 	})
