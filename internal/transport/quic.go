@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"log/slog"
 	"math/big"
@@ -16,6 +17,16 @@ import (
 
 	"github.com/cap-theorem/spectral/internal/wire"
 	"github.com/quic-go/quic-go"
+)
+
+const (
+	quicDialTimeout      = 5 * time.Second
+	quicWriteTimeout     = 5 * time.Second
+	quicReadTimeout      = 5 * time.Second
+	quicIdleTimeout      = 60 * time.Second
+	quicRecvBufferSize   = 1024
+	quicCertNotBeforeAge = time.Hour
+	quicCertLifetime     = 365 * 24 * time.Hour
 )
 
 var _ Transport = (*Quic)(nil)
@@ -67,11 +78,11 @@ func NewQuic(cfg QuicConfig, logger *slog.Logger) (*Quic, error) {
 			InsecureSkipVerify: true,
 		},
 		qcfg: quic.Config{
-			MaxIdleTimeout: time.Minute * 1,
+			MaxIdleTimeout: quicIdleTimeout,
 		},
 		ctx:    ctx,
 		cancel: cancel,
-		recv:   make(chan wire.Envelope, 500),
+		recv:   make(chan wire.Envelope, quicRecvBufferSize),
 
 		logger: logger,
 	}
@@ -95,7 +106,11 @@ func (q *Quic) Send(to netip.AddrPort, env wire.Envelope) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(q.ctx, time.Second*10)
+	go q.send(to, b)
+}
+
+func (q *Quic) send(to netip.AddrPort, b []byte) {
+	ctx, cancel := context.WithTimeout(q.ctx, quicDialTimeout)
 	defer cancel()
 
 	conn, err := q.getConn(ctx, to)
@@ -110,7 +125,7 @@ func (q *Quic) Send(to netip.AddrPort, env wire.Envelope) {
 		return
 	}
 
-	s.SetWriteDeadline(time.Now().Add(time.Second * 5))
+	s.SetWriteDeadline(time.Now().Add(quicWriteTimeout))
 	if _, err := s.Write(b); err != nil {
 		s.CancelWrite(0)
 		q.logger.Debug("failed to write", "err", err)
@@ -122,6 +137,23 @@ func (q *Quic) Send(to netip.AddrPort, env wire.Envelope) {
 
 func (q *Quic) Recv() <-chan wire.Envelope {
 	return q.recv
+}
+
+func (q *Quic) Close() error {
+	q.cancel()
+
+	q.mu.Lock()
+	conns := make([]*quic.Conn, 0, len(q.conns))
+	for _, conn := range q.conns {
+		conns = append(conns, conn)
+	}
+	q.mu.Unlock()
+
+	for _, conn := range conns {
+		conn.CloseWithError(0, "shutdown")
+	}
+
+	return errors.Join(q.tr.Close(), q.udp.Close())
 }
 
 func (q *Quic) getConn(ctx context.Context, to netip.AddrPort) (*quic.Conn, error) {
@@ -139,9 +171,7 @@ func (q *Quic) getConn(ctx context.Context, to netip.AddrPort) (*quic.Conn, erro
 		return nil, err
 	}
 
-	q.mu.Lock()
-	q.conns[to] = conn
-	q.mu.Unlock()
+	q.registerConn(to, conn)
 
 	return conn, nil
 }
@@ -183,7 +213,7 @@ func (q *Quic) startConn(addr netip.AddrPort, conn *quic.Conn) {
 }
 
 func (q *Quic) readStream(s *quic.ReceiveStream) {
-	s.SetReadDeadline(time.Now().Add(time.Second * 10))
+	s.SetReadDeadline(time.Now().Add(quicReadTimeout))
 
 	b, err := io.ReadAll(io.LimitReader(s, wire.MaxFrame+1))
 	if err != nil {
@@ -194,6 +224,7 @@ func (q *Quic) readStream(s *quic.ReceiveStream) {
 	env, err := wire.Decode(b)
 	if err != nil {
 		q.logger.Debug("decode failed", "err", err)
+		return
 	}
 
 	select {
@@ -224,8 +255,8 @@ func selfSignedCert() (tls.Certificate, error) {
 
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour * 24 * 365),
+		NotBefore:    time.Now().Add(-quicCertNotBeforeAge),
+		NotAfter:     time.Now().Add(quicCertLifetime),
 	}
 
 	cert, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, priv)
