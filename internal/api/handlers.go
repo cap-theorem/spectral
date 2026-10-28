@@ -6,8 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"time"
+	"uuid"
 
 	"github.com/cap-theorem/spectral/internal/node"
+	"github.com/go-chi/chi/v5"
 )
 
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -106,4 +108,39 @@ func writeJSON(w http.ResponseWriter, value any) {
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 	}
+}
+
+type PeerPingResponse struct {
+	PeerID string `json:"peer_id"`
+	RTT    string `json:"rtt"`
+}
+
+func (a *API) handlePeerPing(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil || id == uuid.Nil() {
+		writeError(w, http.StatusBadRequest, errors.New("id must be a non-zero UUID"))
+		return
+	}
+
+	peer, ok := a.node.PeerByID(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, errors.New("unknown peer"))
+		return
+	}
+
+	rtt, err := a.node.Ping(r.Context(), peer)
+	if err != nil {
+		status := http.StatusBadGateway
+		if errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, context.Canceled) {
+			status = http.StatusGatewayTimeout
+		}
+		writeError(w, status, err)
+		return
+	}
+
+	writeJSON(w, PeerPingResponse{
+		PeerID: peer.ID.String(),
+		RTT:    rtt.String(),
+	})
 }

@@ -41,6 +41,9 @@ func NewAPI(cfg APIConfig, n *node.Node, logger *slog.Logger) *API {
 	r.Post("/renew", a.handleRenew)
 	r.Get("/lookup", a.handleLookup)
 	r.Get("/status", a.handleStatus)
+	r.Route("/debug", func(r chi.Router) {
+		r.Post("/peers/{id}/ping", a.handlePeerPing)
+	})
 
 	server := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
