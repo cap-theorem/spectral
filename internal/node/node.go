@@ -13,12 +13,15 @@ import (
 	"github.com/cap-theorem/spectral/internal/wire"
 )
 
+const tickInterval = 20 * time.Millisecond
+
 type Node struct {
 	self wire.Peer
 
 	registrations map[RegistrationKey]RegistrationEntry
 
 	reg registry
+	ov  overlay
 
 	inbox     chan request
 	transport transport.Transport
@@ -30,13 +33,16 @@ type NodeConfig struct {
 }
 
 func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node {
+	self := wire.Peer{
+		ID:      uuid.NewV4(),
+		Address: cfg.ListenAddr,
+	}
+
 	return &Node{
-		self: wire.Peer{
-			ID:      uuid.NewV4(),
-			Address: cfg.ListenAddr,
-		},
+		self:          self,
 		registrations: make(map[RegistrationKey]RegistrationEntry),
 		reg:           newRegistry(),
+		ov:            newOverlay(self.ID),
 		inbox:         make(chan request, 100),
 		transport:     tr,
 		logger:        logger,
@@ -106,6 +112,9 @@ func (n *Node) Status(ctx context.Context) (Status, error) {
 func (n *Node) Run(ctx context.Context) {
 	n.logger.Info("node started", "id", n.self.ID, "address", n.self.Address)
 
+	ticker := time.NewTicker(tickInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -114,8 +123,14 @@ func (n *Node) Run(ctx context.Context) {
 			n.handleRequest(req)
 		case env := <-n.transport.Recv():
 			n.handleEnvelope(env)
+		case now := <-ticker.C:
+			n.tick(now)
 		}
 	}
+}
+
+func (n *Node) tick(now time.Time) {
+	n.overlayTick(now)
 }
 
 func (n *Node) handleRequest(req request) {
@@ -136,12 +151,32 @@ func (n *Node) handleRequest(req request) {
 }
 
 func (n *Node) handleEnvelope(env wire.Envelope) {
+	now := time.Now()
+	n.ov.heard(env.From.ID, now)
+
 	switch msg := env.Msg.(type) {
 	case wire.Ping:
 		n.logger.Debug("ping received", "from", env.From.ID)
 		n.send(env.From, wire.Pong{Nonce: msg.Nonce})
 	case wire.Pong:
 		n.logger.Info("pong received", "from", env.From.ID, "address", env.From.Address)
+	case wire.Link:
+		n.ov.addLink(env.From, true, now)
+		n.send(env.From, wire.LinkAck{})
+	case wire.LinkAck:
+		n.ov.addLink(env.From, false, now)
+	case wire.Unlink:
+		delete(n.ov.links, env.From.ID)
+	case wire.Heartbeat:
+		l, ok := n.ov.links[env.From.ID]
+		if !ok {
+			if msg.Want {
+				n.ov.addLink(env.From, true, now)
+			}
+			return
+		}
+		l.theirs = msg.Want
+		n.ov.links[env.From.ID] = l
 	}
 }
 
