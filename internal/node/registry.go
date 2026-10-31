@@ -21,6 +21,17 @@ func newRegistry() registry {
 	}
 }
 
+// `live()` returns both alive and suspect node records
+func (r *registry) live() []wire.Record {
+	var res []wire.Record
+	for _, e := range r.records {
+		if e.Status == wire.StatusAlive || e.Status == wire.StatusSuspect {
+			res = append(res, e.Record)
+		}
+	}
+	return res
+}
+
 func (r *registry) merge(rec wire.Record, since time.Time) bool {
 	old, ok := r.records[rec.Peer.ID]
 	if ok && !newer(rec.Inc, rec.Status, old.Inc, old.Status) {
