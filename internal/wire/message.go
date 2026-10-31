@@ -33,17 +33,16 @@ const (
 )
 
 type Service struct {
-	Service    string `json:"service"`
-	InstanceID string `json:"instance_id"`
-	Endpoint   string `json:"endpoint"`
+	Name     string `json:"name"`
+	Endpoint string `json:"endpoint"`
 }
 
 type Record struct {
-	Peer     Peer      `json:"peer"`
-	Cap      int       `json:"cap"`
-	Inc      uint64    `json:"inc"`
-	Status   Status    `json:"status"`
-	Services []Service `json:"services,omitempty"`
+	Peer    Peer    `json:"peer"`
+	Cap     int     `json:"cap"`
+	Inc     uint64  `json:"inc"`
+	Status  Status  `json:"status"`
+	Service Service `json:"service"`
 }
 
 type Head struct {
