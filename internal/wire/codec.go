@@ -71,6 +71,38 @@ func Decode(b []byte) (Envelope, error) {
 
 func decodeBody(k Kind, body []byte) (Message, error) {
 	switch k {
+	case KindHeartbeat:
+		var m Heartbeat
+		err := json.Unmarshal(body, &m)
+		return m, err
+	case KindLink:
+		var m Link
+		err := json.Unmarshal(body, &m)
+		return m, err
+	case KindLinkAck:
+		var m LinkAck
+		err := json.Unmarshal(body, &m)
+		return m, err
+	case KindUnlink:
+		var m Unlink
+		err := json.Unmarshal(body, &m)
+		return m, err
+	case KindUpdate:
+		var m Update
+		err := json.Unmarshal(body, &m)
+		return m, err
+	case KindAEDigest:
+		var m AEDigest
+		err := json.Unmarshal(body, &m)
+		return m, err
+	case KindAEHeads:
+		var m AEHeads
+		err := json.Unmarshal(body, &m)
+		return m, err
+	case KindAEWant:
+		var m AEWant
+		err := json.Unmarshal(body, &m)
+		return m, err
 	case KindPing:
 		var m Ping
 		err := json.Unmarshal(body, &m)
@@ -79,7 +111,14 @@ func decodeBody(k Kind, body []byte) (Message, error) {
 		var m Pong
 		err := json.Unmarshal(body, &m)
 		return m, err
-	// Add more Kinds here
+	case KindPingReq:
+		var m PingReq
+		err := json.Unmarshal(body, &m)
+		return m, err
+	case KindPingReqAck:
+		var m PingReqAck
+		err := json.Unmarshal(body, &m)
+		return m, err
 	default:
 		return nil, ErrUnknownKind
 	}
