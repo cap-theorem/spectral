@@ -18,6 +18,8 @@ type Node struct {
 
 	registrations map[RegistrationKey]RegistrationEntry
 
+	reg registry
+
 	inbox     chan request
 	transport transport.Transport
 	logger    *slog.Logger
@@ -34,6 +36,7 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 			Address: cfg.ListenAddr,
 		},
 		registrations: make(map[RegistrationKey]RegistrationEntry),
+		reg:           newRegistry(),
 		inbox:         make(chan request, 100),
 		transport:     tr,
 		logger:        logger,
