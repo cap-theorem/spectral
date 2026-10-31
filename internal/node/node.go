@@ -137,6 +137,7 @@ func (n *Node) Run(ctx context.Context) {
 
 func (n *Node) tick(now time.Time) {
 	n.overlayTick(now)
+	n.memberTick(now)
 }
 
 func (n *Node) handleRequest(req request) {
@@ -185,6 +186,12 @@ func (n *Node) handleEnvelope(env wire.Envelope) {
 		n.ov.links[env.From.ID] = l
 	case wire.Update:
 		n.handleUpdate(env.From, msg, now)
+	case wire.AEDigest:
+		n.handleAEDigest(env.From, msg)
+	case wire.AEHeads:
+		n.handleAEHeads(env.From, msg, now)
+	case wire.AEWant:
+		n.handleAEWant(env.From, msg, now)
 	}
 }
 

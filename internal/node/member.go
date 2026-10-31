@@ -1,7 +1,9 @@
 package node
 
 import (
+	"math/rand/v2"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/cap-theorem/spectral/internal/wire"
@@ -15,6 +17,7 @@ const (
 	suspectTimeout      = 4 * time.Second
 	tombstoneTTL        = 60 * time.Second
 	maxUpdateRecords    = 30
+	maxAEHeads          = 200
 )
 
 type queued struct {
@@ -117,18 +120,94 @@ func (n *Node) flush() {
 }
 
 func (n *Node) handleUpdate(from wire.Peer, msg wire.Update, now time.Time) {
+	if slices.Contains(n.mem.seeds, from.Address) {
+		n.mem.seedSynced = true
+	}
+
 	for _, rec := range msg.Records {
 		n.apply(rec, from.ID, now)
 	}
 }
 
-func (n *Node) sendDigest(to wire.Peer) {}
+func (n *Node) sendDigest(to wire.Peer) {
+	n.send(to, wire.AEDigest{Digest: n.reg.digest()})
+}
 
-func (n *Node) handleAEDigest(from wire.Peer, msg wire.AEDigest) {}
+func (n *Node) handleAEDigest(from wire.Peer, msg wire.AEDigest) {
+	if len(msg.Digest) != numBuckets {
+		return
+	}
 
-func (n *Node) handleAEHeads(from wire.Peer, msg wire.AEHeads, now time.Time) {}
+	mine := n.reg.digest()
+	var buckets []int
+	var heads []wire.Head
+	for b := range numBuckets {
+		if mine[b] == msg.Digest[b] {
+			continue
+		}
 
-func (n *Node) handleAEWant(from wire.Peer, msg wire.AEWant, now time.Time) {}
+		bh := n.reg.heads([]int{b})
+		if len(heads) > 0 && len(heads)+len(bh) > maxAEHeads {
+			n.send(from, wire.AEHeads{Buckets: buckets, Heads: heads})
+			buckets, heads = nil, nil
+		}
+		buckets = append(buckets, b)
+		heads = append(heads, bh...)
+	}
+
+	if len(buckets) > 0 {
+		n.send(from, wire.AEHeads{Buckets: buckets, Heads: heads})
+	}
+}
+
+func (n *Node) handleAEHeads(from wire.Peer, msg wire.AEHeads, now time.Time) {
+	theirs := make(map[wire.NodeID]wire.Head, len(msg.Heads))
+	var ids []wire.NodeID
+	for _, h := range msg.Heads {
+		theirs[h.ID] = h
+		e, ok := n.reg.records[h.ID]
+		if !ok || newer(h.Inc, h.Status, e.Inc, e.Status) {
+			ids = append(ids, h.ID)
+		}
+	}
+
+	var push []wire.Record
+	for _, h := range n.reg.heads(msg.Buckets) {
+		t, ok := theirs[h.ID]
+		if !ok || newer(h.Inc, h.Status, t.Inc, t.Status) {
+			push = append(push, n.reg.records[h.ID].Record)
+		}
+	}
+
+	for len(ids) > 0 {
+		k := min(maxAEHeads, len(ids))
+		n.send(from, wire.AEWant{IDs: ids[:k]})
+		ids = ids[k:]
+	}
+	n.sendRecords(from, push)
+}
+
+func (n *Node) handleAEWant(from wire.Peer, msg wire.AEWant, now time.Time) {
+	for _, rec := range msg.Records {
+		n.apply(rec, from.ID, now)
+	}
+
+	var recs []wire.Record
+	for _, id := range msg.IDs {
+		if e, ok := n.reg.records[id]; ok {
+			recs = append(recs, e.Record)
+		}
+	}
+	n.sendRecords(from, recs)
+}
+
+func (n *Node) sendRecords(to wire.Peer, recs []wire.Record) {
+	for len(recs) > 0 {
+		k := min(maxUpdateRecords, len(recs))
+		n.send(to, wire.Update{Records: recs[:k]})
+		recs = recs[k:]
+	}
+}
 
 func (n *Node) startProbe(target wire.Peer, now time.Time) {}
 
@@ -138,4 +217,31 @@ func (n *Node) handlePingReqAck(from wire.Peer, msg wire.PingReqAck) {}
 
 func (n *Node) suspect(id wire.NodeID, now time.Time) {}
 
-func (n *Node) memberTick(now time.Time) {}
+func (n *Node) memberTick(now time.Time) {
+	if !now.Before(n.mem.nextAE) {
+		n.mem.nextAE = now.Add(antiEntropyInterval)
+		if peer, ok := n.randomLink(); ok {
+			n.sendDigest(peer)
+		}
+	}
+
+	if !n.mem.seedSynced && len(n.mem.seeds) > 0 && !now.Before(n.mem.nextSeedPull) {
+		n.mem.nextSeedPull = now.Add(seedPullInterval)
+		n.sendDigest(wire.Peer{Address: n.mem.seeds[rand.IntN(len(n.mem.seeds))]})
+	}
+}
+
+func (n *Node) randomLink() (wire.Peer, bool) {
+	if len(n.ov.links) == 0 {
+		return wire.Peer{}, false
+	}
+
+	i := rand.IntN(len(n.ov.links))
+	for _, l := range n.ov.links {
+		if i == 0 {
+			return l.peer, true
+		}
+		i--
+	}
+	return wire.Peer{}, false
+}
