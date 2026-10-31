@@ -18,14 +18,14 @@ import (
 )
 
 func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
-	tr, err := transport.NewQuic(
-		transport.QuicConfig{
+	tr, err := transport.NewUDP(
+		transport.UDPConfig{
 			ListenAddr: cfg.ListenAddr,
 		},
-		logger.With("component", "quic"),
+		logger.With("component", "udp"),
 	)
 	if err != nil {
-		logger.Error("failed to initialize quic transport", "err", err)
+		logger.Error("failed to initialize udp transport", "err", err)
 		return err
 	}
 
