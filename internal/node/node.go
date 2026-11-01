@@ -11,6 +11,7 @@ import (
 
 	"github.com/cap-theorem/spectral/internal/transport"
 	"github.com/cap-theorem/spectral/internal/wire"
+	"go.opentelemetry.io/otel/metric"
 )
 
 const tickInterval = 20 * time.Millisecond
@@ -27,11 +28,17 @@ type Node struct {
 	inbox     chan request
 	transport transport.Transport
 	logger    *slog.Logger
+	metrics   NodeMetrics
+}
+
+type NodeMetrics struct {
+	PongsReceived metric.Int64Counter
 }
 
 type NodeConfig struct {
 	ListenAddr netip.AddrPort
 	Seeds      []string
+	Metrics    NodeMetrics
 }
 
 func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node {
@@ -49,6 +56,7 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 		inbox:         make(chan request, 100),
 		transport:     tr,
 		logger:        logger,
+		metrics:       cfg.Metrics,
 	}
 	n.reg.merge(wire.Record{Peer: self, Status: wire.StatusAlive}, time.Now())
 
@@ -167,7 +175,11 @@ func (n *Node) handleEnvelope(env wire.Envelope) {
 		n.logger.Debug("ping received", "from", env.From.ID)
 		n.send(env.From, wire.Pong{Nonce: msg.Nonce})
 	case wire.Pong:
+		if n.metrics.PongsReceived != nil {
+			n.metrics.PongsReceived.Add(context.Background(), 1)
+		}
 		n.logger.Info("pong received", "from", env.From.ID, "address", env.From.Address)
+
 	case wire.Link:
 		n.ov.addLink(env.From, true, now)
 		n.send(env.From, wire.LinkAck{})
