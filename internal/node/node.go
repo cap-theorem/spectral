@@ -22,6 +22,7 @@ type Node struct {
 
 	reg registry
 	ov  overlay
+	mem membership
 
 	inbox     chan request
 	transport transport.Transport
@@ -30,6 +31,7 @@ type Node struct {
 
 type NodeConfig struct {
 	ListenAddr netip.AddrPort
+	Seeds      []string
 }
 
 func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node {
@@ -38,15 +40,19 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 		Address: cfg.ListenAddr,
 	}
 
-	return &Node{
+	n := &Node{
 		self:          self,
 		registrations: make(map[RegistrationKey]RegistrationEntry),
 		reg:           newRegistry(),
 		ov:            newOverlay(self.ID),
+		mem:           newMembership(cfg.Seeds),
 		inbox:         make(chan request, 100),
 		transport:     tr,
 		logger:        logger,
 	}
+	n.reg.merge(wire.Record{Peer: self, Status: wire.StatusAlive}, time.Now())
+
+	return n
 }
 
 func (n *Node) Register(ctx context.Context, reg Registration) (Lease, error) {
@@ -126,11 +132,13 @@ func (n *Node) Run(ctx context.Context) {
 		case now := <-ticker.C:
 			n.tick(now)
 		}
+		n.flush()
 	}
 }
 
 func (n *Node) tick(now time.Time) {
 	n.overlayTick(now)
+	n.memberTick(now)
 }
 
 func (n *Node) handleRequest(req request) {
@@ -177,6 +185,14 @@ func (n *Node) handleEnvelope(env wire.Envelope) {
 		}
 		l.theirs = msg.Want
 		n.ov.links[env.From.ID] = l
+	case wire.Update:
+		n.handleUpdate(env.From, msg, now)
+	case wire.AEDigest:
+		n.handleAEDigest(env.From, msg)
+	case wire.AEHeads:
+		n.handleAEHeads(env.From, msg, now)
+	case wire.AEWant:
+		n.handleAEWant(env.From, msg, now)
 	}
 }
 
