@@ -39,7 +39,7 @@ func (d *DaemonCLIConfig) Validate() error {
 	}
 
 	if !d.ListenAddr.IsValid() {
-		return fmt.Errorf("--listen-addr must contain a valid IP and port (i.e 127.0.0.1:8080)")
+		return fmt.Errorf("--listen-addr must contain a valid IP and port (i.e 127.0.0.1:8000)")
 	}
 
 	if d.ListenAddr.Addr().IsUnspecified() || d.ListenAddr.Port() == 0 {

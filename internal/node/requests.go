@@ -2,12 +2,16 @@ package node
 
 import (
 	"errors"
+	"time"
+
+	"github.com/cap-theorem/spectral/internal/wire"
 )
 
 var (
 	ErrRegistrationAlreadyExists = errors.New("this registration already exists")
 	ErrInvalidRegistration       = errors.New("invalid registration")
 	ErrTokenGenerationFail       = errors.New("failed to generate token")
+	ErrUnknownPeer               = errors.New("unknown peer")
 )
 
 // request is a message submitted to the node's inbox by one of its exported methods.
@@ -38,7 +42,15 @@ type statusRequest struct {
 	Reply chan result[Status]
 }
 
+type pingRequest struct {
+	ID       wire.NodeID
+	Nonce    uint64
+	Deadline time.Time
+	Reply    chan result[time.Duration]
+}
+
 func (registerRequest) isRequest() {}
 func (renewRequest) isRequest()    {}
 func (lookupRequest) isRequest()   {}
 func (statusRequest) isRequest()   {}
+func (pingRequest) isRequest()     {}
