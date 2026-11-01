@@ -132,6 +132,7 @@ func (n *Node) overlayTick(now time.Time) {
 	for id, l := range n.ov.links {
 		if now.Sub(l.lastRecv) > linkTimeout {
 			delete(n.ov.links, id)
+			n.suspect(id, now)
 			n.avoidPeer(id, now)
 			continue
 		}
@@ -164,6 +165,7 @@ func (n *Node) overlayTick(now time.Time) {
 		}
 
 		delete(n.ov.pending, id)
+		n.suspect(id, now)
 		n.avoidPeer(id, now)
 	}
 

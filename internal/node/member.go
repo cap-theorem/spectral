@@ -220,7 +220,16 @@ func (n *Node) handlePingReq(from wire.Peer, msg wire.PingReq, now time.Time) {}
 
 func (n *Node) handlePingReqAck(from wire.Peer, msg wire.PingReqAck) {}
 
-func (n *Node) suspect(id wire.NodeID, now time.Time) {}
+func (n *Node) suspect(id wire.NodeID, now time.Time) {
+	e, ok := n.reg.records[id]
+	if !ok || e.Status != wire.StatusAlive {
+		return
+	}
+
+	rec := e.Record
+	rec.Status = wire.StatusSuspect
+	n.apply(rec, n.self.ID, now)
+}
 
 func (n *Node) memberTick(now time.Time) {
 	if !now.Before(n.mem.nextAE) {
