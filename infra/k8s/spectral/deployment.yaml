@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: spctrld
 spec:
-  replicas: 1 # for now :)
+  replicas: 2 # for now :)
   selector:
     matchLabels:
       app: spctrld
@@ -18,8 +18,12 @@ spec:
           image: spctrld:dev
           imagePullPolicy: Never # Use image loaded into kind instead of searching Docker Hub 
           ports:
+            - name: quic
+              containerPort: 7000
+              protocol: UDP
             - name: http
-              containerPort: 8080
+              containerPort: 8000
+              protocol: TCP
           env:
             - name: LOG_FORMAT
               value: json
@@ -29,4 +33,12 @@ spec:
               value: http://otel-collector.observability.svc.cluster.local:4317
             - name: OTEL_METRIC_EXPORT_INTERVAL
               value: "5000"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          args:
+            - "--listen-addr=$(POD_IP):7000"
+            - "--api-port=8000"
+            - "--bootstrap=spctrld-peers:7000"
 
