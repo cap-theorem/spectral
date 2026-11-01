@@ -247,6 +247,23 @@ func (n *Node) memberTick(now time.Time) {
 			break
 		}
 	}
+
+	n.expireSuspects(now)
+}
+
+func (n *Node) expireSuspects(now time.Time) {
+	var dead []wire.Record
+	for _, e := range n.reg.records {
+		if e.Status == wire.StatusSuspect && now.Sub(e.since) > suspectTimeout {
+			rec := e.Record
+			rec.Status = wire.StatusDead
+			dead = append(dead, rec)
+		}
+	}
+
+	for _, rec := range dead {
+		n.apply(rec, n.self.ID, now)
+	}
 }
 
 func (n *Node) resolveSeed(seed string) []netip.AddrPort {
