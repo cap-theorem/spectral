@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"log/slog"
 	"net/netip"
@@ -13,7 +14,10 @@ import (
 	"github.com/cap-theorem/spectral/internal/wire"
 )
 
-const tickInterval = 20 * time.Millisecond
+const (
+	tickInterval = 20 * time.Millisecond
+	pingTimeout  = 2 * time.Second
+)
 
 type Node struct {
 	self wire.Peer
@@ -27,6 +31,15 @@ type Node struct {
 	inbox     chan request
 	transport transport.Transport
 	logger    *slog.Logger
+
+	pendingPing map[uint64]pendingPing
+}
+
+type pendingPing struct {
+	peerID   wire.NodeID
+	started  time.Time
+	deadline time.Time
+	reply    chan result[time.Duration]
 }
 
 type NodeConfig struct {
@@ -49,6 +62,7 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 		inbox:         make(chan request, 100),
 		transport:     tr,
 		logger:        logger,
+		pendingPing:   make(map[uint64]pendingPing),
 	}
 	n.reg.merge(wire.Record{Peer: self, Status: wire.StatusAlive}, time.Now())
 
@@ -116,7 +130,7 @@ func (n *Node) Status(ctx context.Context) (Status, error) {
 }
 
 func (n *Node) Run(ctx context.Context) {
-	n.logger.Info("node started", "id", n.self.ID, "address", n.self.Address)
+	n.logger.Info("Node started", "id", n.self.ID, "address", n.self.Address)
 
 	ticker := time.NewTicker(tickInterval)
 	defer ticker.Stop()
@@ -139,6 +153,7 @@ func (n *Node) Run(ctx context.Context) {
 func (n *Node) tick(now time.Time) {
 	n.overlayTick(now)
 	n.memberTick(now)
+	n.expirePings(now)
 }
 
 func (n *Node) handleRequest(req request) {
@@ -155,6 +170,9 @@ func (n *Node) handleRequest(req request) {
 	case statusRequest:
 		n.logger.Info("status request received")
 		req.Reply <- result[Status]{Value: Status{Ready: true, State: StateActive}}
+	case pingRequest:
+		n.logger.Info("ping request received", "peer", req.ID)
+		n.startPing(req)
 	}
 }
 
@@ -168,6 +186,11 @@ func (n *Node) handleEnvelope(env wire.Envelope) {
 		n.send(env.From, wire.Pong{Nonce: msg.Nonce})
 	case wire.Pong:
 		n.logger.Info("pong received", "from", env.From.ID, "address", env.From.Address)
+		pending, ok := n.pendingPing[msg.Nonce]
+		if ok && pending.peerID == env.From.ID && env.To == n.self.ID {
+			delete(n.pendingPing, msg.Nonce)
+			pending.reply <- result[time.Duration]{Value: time.Since(pending.started)}
+		}
 	case wire.Link:
 		n.ov.addLink(env.From, true, now)
 		n.send(env.From, wire.LinkAck{})
@@ -245,4 +268,60 @@ func generateHexToken(byteLength int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func (n *Node) Ping(ctx context.Context, id wire.NodeID) (time.Duration, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0, err
+	}
+	nonce := binary.LittleEndian.Uint64(b[:])
+
+	ctx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+
+	req := pingRequest{
+		ID:       id,
+		Nonce:    nonce,
+		Deadline: deadline,
+		Reply:    make(chan result[time.Duration], 1),
+	}
+
+	select {
+	case n.inbox <- req:
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+
+	select {
+	case res := <-req.Reply:
+		return res.Value, res.Err
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+}
+
+func (n *Node) startPing(req pingRequest) {
+	e, ok := n.reg.records[req.ID]
+	if !ok {
+		req.Reply <- result[time.Duration]{Err: ErrUnknownPeer}
+		return
+	}
+
+	n.pendingPing[req.Nonce] = pendingPing{
+		peerID:   req.ID,
+		started:  time.Now(),
+		deadline: req.Deadline,
+		reply:    req.Reply,
+	}
+	n.send(e.Peer, wire.Ping{Nonce: req.Nonce})
+}
+
+func (n *Node) expirePings(now time.Time) {
+	for nonce, pending := range n.pendingPing {
+		if now.After(pending.deadline) {
+			delete(n.pendingPing, nonce)
+		}
+	}
 }
