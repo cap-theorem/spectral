@@ -39,6 +39,7 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 	node := node.NewNode(
 		node.NodeConfig{
 			ListenAddr: cfg.ListenAddr,
+			Seeds:      cfg.Bootstrap,
 		},
 		tr,
 		logger.With("component", "node"),

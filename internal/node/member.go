@@ -1,9 +1,12 @@
 package node
 
 import (
+	"context"
 	"math/rand/v2"
+	"net"
 	"net/netip"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/cap-theorem/spectral/internal/wire"
@@ -18,6 +21,7 @@ const (
 	tombstoneTTL        = 60 * time.Second
 	maxUpdateRecords    = 30
 	maxAEHeads          = 200
+	seedResolveTimeout  = 200 * time.Millisecond
 )
 
 type queued struct {
@@ -38,7 +42,8 @@ type relay struct {
 }
 
 type membership struct {
-	seeds        []netip.AddrPort
+	seeds        []string
+	seedAddrs    []netip.AddrPort
 	seedSynced   bool
 	nextSeedPull time.Time
 	nextAE       time.Time
@@ -48,7 +53,7 @@ type membership struct {
 	relays map[uint64]relay
 }
 
-func newMembership(seeds []netip.AddrPort) membership {
+func newMembership(seeds []string) membership {
 	return membership{
 		seeds:  seeds,
 		probes: make(map[uint64]probe),
@@ -120,7 +125,7 @@ func (n *Node) flush() {
 }
 
 func (n *Node) handleUpdate(from wire.Peer, msg wire.Update, now time.Time) {
-	if slices.Contains(n.mem.seeds, from.Address) {
+	if slices.Contains(n.mem.seedAddrs, from.Address) {
 		n.mem.seedSynced = true
 	}
 
@@ -227,8 +232,55 @@ func (n *Node) memberTick(now time.Time) {
 
 	if !n.mem.seedSynced && len(n.mem.seeds) > 0 && !now.Before(n.mem.nextSeedPull) {
 		n.mem.nextSeedPull = now.Add(seedPullInterval)
-		n.sendDigest(wire.Peer{Address: n.mem.seeds[rand.IntN(len(n.mem.seeds))]})
+		for _, i := range rand.Perm(len(n.mem.seeds)) {
+			addrs := n.resolveSeed(n.mem.seeds[i])
+			if len(addrs) == 0 {
+				continue
+			}
+
+			for _, addr := range addrs {
+				if !slices.Contains(n.mem.seedAddrs, addr) {
+					n.mem.seedAddrs = append(n.mem.seedAddrs, addr)
+				}
+			}
+			n.sendDigest(wire.Peer{Address: addrs[rand.IntN(len(addrs))]})
+			break
+		}
 	}
+}
+
+func (n *Node) resolveSeed(seed string) []netip.AddrPort {
+	host, portStr, err := net.SplitHostPort(seed)
+	if err != nil {
+		n.logger.Warn("invalid seed", "seed", seed, "err", err)
+		return nil
+	}
+	port, err := strconv.ParseUint(portStr, 10, 16)
+	if err != nil {
+		n.logger.Warn("invalid seed port", "seed", seed, "err", err)
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), seedResolveTimeout)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		n.logger.Debug("seed lookup failed", "seed", seed, "err", err)
+		return nil
+	}
+
+	var addrs []netip.AddrPort
+	for _, ip := range ips {
+		ip = ip.Unmap()
+		if ip.Is4() != n.self.Address.Addr().Is4() {
+			continue
+		}
+		addr := netip.AddrPortFrom(ip, uint16(port))
+		if addr != n.self.Address {
+			addrs = append(addrs, addr)
+		}
+	}
+	return addrs
 }
 
 func (n *Node) randomLink() (wire.Peer, bool) {

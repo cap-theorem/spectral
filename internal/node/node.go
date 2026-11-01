@@ -31,6 +31,7 @@ type Node struct {
 
 type NodeConfig struct {
 	ListenAddr netip.AddrPort
+	Seeds      []string
 }
 
 func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node {
@@ -44,7 +45,7 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 		registrations: make(map[RegistrationKey]RegistrationEntry),
 		reg:           newRegistry(),
 		ov:            newOverlay(self.ID),
-		mem:           newMembership(nil),
+		mem:           newMembership(cfg.Seeds),
 		inbox:         make(chan request, 100),
 		transport:     tr,
 		logger:        logger,
