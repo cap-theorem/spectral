@@ -29,10 +29,10 @@ type Node struct {
 	ov  overlay
 	mem membership
 
-	inbox     chan request
-	transport transport.Transport
-	logger    *slog.Logger
-  metrics   NodeMetrics
+	inbox       chan request
+	transport   transport.Transport
+	logger      *slog.Logger
+	metrics     NodeMetrics
 	pendingPing map[uint64]pendingPing
 }
 
@@ -68,7 +68,7 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 		inbox:         make(chan request, 100),
 		transport:     tr,
 		logger:        logger,
-    metrics:       cfg.Metrics,
+		metrics:       cfg.Metrics,
 		pendingPing:   make(map[uint64]pendingPing),
 	}
 	n.reg.merge(wire.Record{Peer: self, Status: wire.StatusAlive}, time.Now())
