@@ -23,7 +23,7 @@ const (
 type Node struct {
 	self wire.Peer
 
-	registrations map[RegistrationKey]RegistrationEntry
+	lease *Lease
 
 	reg registry
 	ov  overlay
@@ -60,16 +60,16 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 	}
 
 	n := &Node{
-		self:          self,
-		registrations: make(map[RegistrationKey]RegistrationEntry),
-		reg:           newRegistry(),
-		ov:            newOverlay(self.ID),
-		mem:           newMembership(cfg.Seeds),
-		inbox:         make(chan request, 100),
-		transport:     tr,
-		logger:        logger,
-		metrics:       cfg.Metrics,
-		pendingPing:   make(map[uint64]pendingPing),
+		self:        self,
+		lease:       nil,
+		reg:         newRegistry(),
+		ov:          newOverlay(self.ID),
+		mem:         newMembership(cfg.Seeds),
+		inbox:       make(chan request, 100),
+		transport:   tr,
+		logger:      logger,
+		metrics:     cfg.Metrics,
+		pendingPing: make(map[uint64]pendingPing),
 	}
 	n.reg.merge(wire.Record{Peer: self, Status: wire.StatusAlive}, time.Now())
 
@@ -160,6 +160,7 @@ func (n *Node) Run(ctx context.Context) {
 func (n *Node) tick(now time.Time) {
 	n.overlayTick(now)
 	n.memberTick(now)
+	n.expireLease(now)
 	n.expirePings(now)
 }
 
@@ -242,34 +243,29 @@ func (n *Node) registerService(reg Registration) (Lease, error) {
 		return Lease{}, err
 	}
 
-	key := RegistrationKey{
-		Service:    reg.Service,
-		InstanceID: reg.InstanceID,
-	}
 	now := time.Now()
-	if existing, ok := n.registrations[key]; ok && now.Before(existing.Lease.ExpiresAt) {
-		return Lease{}, ErrRegistrationAlreadyExists
-	}
 
 	token, err := generateHexToken(32)
 	if err != nil {
 		return Lease{}, ErrTokenGenerationFail
 	}
 
-	lease := Lease{
+	own := n.reg.records[n.self.ID].Record
+
+	own.Service.Name = reg.Service
+	own.Service.Endpoint = reg.Endpoint
+	own.Inc++
+	own.Status = wire.StatusAlive
+
+	n.apply(own, n.self.ID, now)
+
+	n.lease = &Lease{
 		Token:     token,
 		ExpiresAt: now.Add(reg.TTL),
 		TTL:       reg.TTL,
 	}
-	n.registrations[key] = RegistrationEntry{
-		Lease: lease,
-		Provider: Provider{
-			Service:    reg.Service,
-			InstanceID: reg.InstanceID,
-			Endpoint:   reg.Endpoint,
-		},
-	}
-	return lease, nil
+
+	return *n.lease, nil
 }
 
 func generateHexToken(byteLength int) (string, error) {
@@ -334,4 +330,16 @@ func (n *Node) expirePings(now time.Time) {
 			delete(n.pendingPing, nonce)
 		}
 	}
+}
+
+func (n *Node) expireLease(now time.Time) {
+	if n.lease == nil || now.Before(n.lease.ExpiresAt) {
+		return
+	}
+
+	own := n.reg.records[n.self.ID].Record
+	own.Service = wire.Service{}
+	own.Inc++
+	n.apply(own, n.self.ID, now)
+	n.lease = nil
 }
