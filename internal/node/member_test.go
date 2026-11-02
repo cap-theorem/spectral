@@ -77,3 +77,42 @@ func TestSilentLinkSuspectsThenDies(t *testing.T) {
 		t.Fatalf("after suspect timeout: %v, want Dead", got)
 	}
 }
+
+func TestTombstoneDeletedAndNotReimported(t *testing.T) {
+	t0 := time.Unix(100, 0)
+
+	tests := []struct {
+		name   string
+		status wire.Status
+	}{
+		{"dead", wire.StatusDead},
+		{"left", wire.StatusLeft},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := testNode()
+			peer := uuid.NewV4()
+			x := wire.Peer{ID: uuid.NewV4()}
+			n.apply(wire.Record{Peer: x, Status: wire.StatusAlive}, peer, t0)
+			n.apply(wire.Record{Peer: x, Status: tt.status}, n.self.ID, t0)
+
+			n.memberTick(t0.Add(tombstoneTTL))
+			if _, ok := n.reg.records[x.ID]; !ok {
+				t.Fatal("tombstone deleted before ttl")
+			}
+
+			n.memberTick(t0.Add(tombstoneTTL + time.Millisecond))
+			if _, ok := n.reg.records[x.ID]; ok {
+				t.Fatal("tombstone kept after ttl")
+			}
+
+			if n.apply(wire.Record{Peer: x, Status: tt.status}, peer, t0.Add(2*tombstoneTTL)) {
+				t.Fatal("apply() = true for a tombstone of an unknown node")
+			}
+			if _, ok := n.reg.records[x.ID]; ok {
+				t.Fatal("tombstone re-imported")
+			}
+		})
+	}
+}
