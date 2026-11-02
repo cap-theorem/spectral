@@ -38,7 +38,6 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
-	nodeCtx, stopNode := context.WithCancel(context.Background())
 
 	// exporters for metrics
 	exporterCtx, cancelExporter := context.WithTimeout(sigCtx, 5*time.Second)
@@ -59,6 +58,8 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initalize pongsReceived meter: %w", err)
 	}
+
+	nodeCtx, stopNode := context.WithCancel(context.Background())
 
 	node := node.NewNode(
 		node.NodeConfig{
