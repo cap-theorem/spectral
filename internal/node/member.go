@@ -68,6 +68,9 @@ func (n *Node) apply(rec wire.Record, from wire.NodeID, now time.Time) bool {
 	}
 
 	old, known := n.reg.records[rec.Peer.ID]
+	if (rec.Status == wire.StatusDead || rec.Status == wire.StatusLeft) && !known {
+		return false
+	}
 	if from != n.self.ID && rec.Status == wire.StatusDead && known && isLive(old.Status) {
 		rec.Status = wire.StatusSuspect
 	}
@@ -258,6 +261,7 @@ func (n *Node) memberTick(now time.Time) {
 	}
 
 	n.expireSuspects(now)
+	n.expireTombstones(now)
 }
 
 func (n *Node) expireSuspects(now time.Time) {
@@ -322,4 +326,12 @@ func (n *Node) randomLink() (wire.Peer, bool) {
 		i--
 	}
 	return wire.Peer{}, false
+}
+
+func (n *Node) expireTombstones(now time.Time) {
+	for id, e := range n.reg.records {
+		if (e.Status == wire.StatusDead || e.Status == wire.StatusLeft) && now.Sub(e.since) > tombstoneTTL {
+			delete(n.reg.records, id)
+		}
+	}
 }
