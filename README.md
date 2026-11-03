@@ -1,5 +1,9 @@
 # Spectral
 
+<p align="center">
+  <img src="assets/spectral-ghost.png" alt="Spectral ghost" width="200">
+</p>
+
 Spectral is an experimental service discovery system for environments for where service instances frequently start, stop, or fail (i.e. distributed systems). Its goal is to let applications find available service instances without depending on a central registry.
 
 The intended deployment runs a Spectral daemon alongside each application used within a system. These daemons communicate with one another to discover services across a network (currently simulated with Kubernetes). Each daemon maintains connections to a small number of peers, keeping the network connected without requiring every daemon to connect to every other daemon. We are attempting to use expander graphs in order to keep this network reliable.
