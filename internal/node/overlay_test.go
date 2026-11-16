@@ -67,7 +67,7 @@ func TestOverlayRecompute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			live := liveRecords(20)
-			o := newOverlay(live[0].Peer.ID)
+			o := newOverlay(live[0].Peer.ID, false)
 			in, ineligible := tt.edit(&o, live, best(o.self, live))
 
 			o.recompute(in, now)
@@ -98,18 +98,18 @@ func TestOverlayRecompute(t *testing.T) {
 
 func TestOverlayRecomputeStable(t *testing.T) {
 	live := liveRecords(50)
-	a := newOverlay(live[0].Peer.ID)
+	a := newOverlay(live[0].Peer.ID, false)
 	a.recompute(live, time.Unix(100, 0))
 
 	reversed := slices.Clone(live)
 	slices.Reverse(reversed)
-	again := newOverlay(live[0].Peer.ID)
+	again := newOverlay(live[0].Peer.ID, false)
 	again.recompute(reversed, time.Unix(100, 0))
 	if !maps.Equal(a.want, again.want) {
 		t.Fatalf("got %v for reversed input, want %v", again.want, a.want)
 	}
 
-	b := newOverlay(live[1].Peer.ID)
+	b := newOverlay(live[1].Peer.ID, false)
 	b.recompute(live, time.Unix(100, 0))
 	if maps.Equal(a.want, b.want) {
 		t.Fatalf("nodes %v and %v picked the same peers", a.self, b.self)
@@ -155,5 +155,36 @@ func TestOverlayLinksFormOverMem(t *testing.T) {
 				t.Fatalf("link %v-%v is one-sided", n.self.ID, m.self.ID)
 			}
 		}
+	}
+}
+
+func TestOverlayCoin(t *testing.T) {
+	live := liveRecords(300)
+	now := time.Unix(100, 0)
+
+	overlays := make([]overlay, len(live))
+	total := 0
+	for i, rec := range live {
+		overlays[i] = newOverlay(rec.Peer.ID, true)
+		overlays[i].recompute(live, now)
+		total += len(overlays[i].want)
+
+		if _, ok := overlays[i].want[rec.Peer.ID]; ok {
+			t.Fatalf("node %v picked itself", rec.Peer.ID)
+		}
+	}
+
+	for i, a := range overlays {
+		for j, b := range overlays {
+			_, ab := a.want[live[j].Peer.ID]
+			_, ba := b.want[live[i].Peer.ID]
+			if ab != ba {
+				t.Fatalf("coin between %v and %v is one-sided", a.self, b.self)
+			}
+		}
+	}
+
+	if mean := float64(total) / float64(len(live)); mean < 2*K-1.5 || mean > 2*K+1.5 {
+		t.Fatalf("mean degree = %.2f, want about %d", mean, 2*K)
 	}
 }

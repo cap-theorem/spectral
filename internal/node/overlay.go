@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bytes"
 	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
@@ -42,11 +43,13 @@ type overlay struct {
 	avoid   map[wire.NodeID]time.Time
 
 	dirty bool
+	coin  bool
 }
 
-func newOverlay(self wire.NodeID) overlay {
+func newOverlay(self wire.NodeID, coin bool) overlay {
 	return overlay{
 		self:    self,
+		coin:    coin,
 		want:    make(map[wire.NodeID]wire.Peer),
 		links:   make(map[wire.NodeID]link),
 		pending: make(map[wire.NodeID]linkRequest),
@@ -92,6 +95,11 @@ func (o *overlay) recompute(live []wire.Record, now time.Time) {
 		}
 
 		cands = append(cands, candidate{rank: rank(o.self, id), peer: rec.Peer})
+	}
+
+	if o.coin {
+		o.pickCoin(cands)
+		return
 	}
 
 	slices.SortFunc(cands, func(a, b candidate) int {
@@ -179,7 +187,25 @@ func (n *Node) overlayTick(now time.Time) {
 	}
 }
 
+func (o *overlay) pickCoin(cands []candidate) {
+	p := min(1, float64(2*K)/float64(len(cands)))
+
+	o.want = make(map[wire.NodeID]wire.Peer)
+	for _, c := range cands {
+		if coin(o.self, c.peer.ID) < p {
+			o.want[c.peer.ID] = c.peer
+		}
+	}
+}
+
 func rank(u, v wire.NodeID) uint64 {
 	sum := sha256.Sum256(append(u[:], v[:]...))
 	return binary.BigEndian.Uint64(sum[:8])
+}
+
+func coin(u, v wire.NodeID) float64 {
+	if bytes.Compare(u[:], v[:]) > 0 {
+		u, v = v, u
+	}
+	return float64(rank(u, v)>>11) / (1 << 53)
 }

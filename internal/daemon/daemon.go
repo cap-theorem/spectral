@@ -65,6 +65,7 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 		node.NodeConfig{
 			ListenAddr: cfg.ListenAddr,
 			Seeds:      cfg.Bootstrap,
+			Overlay:    cfg.Overlay,
 			Metrics: node.NodeMetrics{
 				PongsReceived: pongsReceived,
 			},

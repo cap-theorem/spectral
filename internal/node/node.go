@@ -50,6 +50,7 @@ type pendingPing struct {
 type NodeConfig struct {
 	ListenAddr netip.AddrPort
 	Seeds      []string
+	Overlay    string
 	Metrics    NodeMetrics
 }
 
@@ -63,7 +64,7 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 		self:        self,
 		lease:       nil,
 		reg:         newRegistry(),
-		ov:          newOverlay(self.ID),
+		ov:          newOverlay(self.ID, cfg.Overlay == "coin"),
 		mem:         newMembership(cfg.Seeds),
 		inbox:       make(chan request, 100),
 		transport:   tr,
