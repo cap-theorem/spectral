@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
+
+	"github.com/cap-theorem/spectral/internal/version"
 )
 
 type DaemonCLIConfig struct {
@@ -29,11 +31,13 @@ type DaemonCLIConfig struct {
 	LogFormat string     `name:"log-format" default:"text" enum:"text,json" help:"Log format."`
 
 	DrainTimeout time.Duration `name:"drain-timeout" default:"30s" help:"Graceful shutdown timeout."`
+
+	Version kong.VersionFlag `name:"version" help:"Print version and exit."`
 }
 
 func ParseDaemonCLI() DaemonCLIConfig {
 	var cfg DaemonCLIConfig
-	kong.Parse(&cfg, kong.Name("spectral"), kong.Description("Run a spectral node."))
+	kong.Parse(&cfg, kong.Name("spectral"), kong.Vars{"version": version.Version}, kong.Description("Run a spectral node."))
 	return cfg
 }
 
