@@ -59,12 +59,18 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 		return fmt.Errorf("initalize pongsReceived meter: %w", err)
 	}
 
+	overlay, err := node.ParseOverlay(cfg.Overlay)
+	if err != nil {
+		return fmt.Errorf("parse overlay %q: %w", cfg.Overlay, err)
+	}
+
 	nodeCtx, stopNode := context.WithCancel(context.Background())
 
 	node := node.NewNode(
 		node.NodeConfig{
 			ListenAddr: cfg.ListenAddr,
 			Seeds:      cfg.Bootstrap,
+			Overlay:    overlay,
 			Metrics: node.NodeMetrics{
 				PongsReceived: pongsReceived,
 			},

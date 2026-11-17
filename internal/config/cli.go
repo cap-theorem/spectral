@@ -20,6 +20,7 @@ type DaemonCLIConfig struct {
 	TLSCA   string `name:"tls-ca" type:"existingfile" help:"Trusted CA bundle."`
 
 	Bootstrap []string `name:"bootstrap" sep:"none" help:"Existing peer host:port to contact when joining. May be repeated."`
+	Overlay   string   `name:"overlay" default:"hrw" enum:"hrw,coin" help:"Overlay link rule: hrw or coin."`
 
 	LogLevel  slog.Level `name:"log-level" default:"info" help:"Log level: debug, info, warn, error."`
 	LogFormat string     `name:"log-format" default:"text" enum:"text,json" help:"Log format."`
