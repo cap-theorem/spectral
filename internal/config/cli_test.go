@@ -25,6 +25,8 @@ func TestDaemonCLIConfig(t *testing.T) {
 		{"ipv6 listen addr", []string{"--listen-addr", "[fd7a:115c:a1e0::1]:7000"}, false},
 		{"unspecified listen addr", []string{"--listen-addr", "0.0.0.0:7000"}, true},
 		{"unspecified ipv6 listen addr", []string{"--listen-addr", "[::]:7000"}, true},
+		{"collector url", []string{"--listen-addr", "127.0.0.1:7000", "--collector-url", "http://collector:8100"}, false},
+		{"collector url without scheme", []string{"--listen-addr", "127.0.0.1:7000", "--collector-url", "collector:8100"}, true},
 		{"listen port 0", []string{"--listen-addr", "127.0.0.1:0"}, true},
 	}
 

@@ -79,6 +79,9 @@ func newOverlay(self wire.NodeID, kind OverlayKind) overlay {
 }
 
 func (o *overlay) addLink(peer wire.Peer, theirs bool, now time.Time) {
+	if peer.ID == o.self || peer.ID == (wire.NodeID{}) {
+		return
+	}
 	l, ok := o.links[peer.ID]
 	if !ok {
 		l = link{peer: peer, since: now}

@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/cap-theorem/spectral/internal/api"
+	"github.com/cap-theorem/spectral/internal/collector"
 	"github.com/cap-theorem/spectral/internal/config"
 	"github.com/cap-theorem/spectral/internal/node"
+	"github.com/cap-theorem/spectral/internal/telemetry"
 	"github.com/cap-theorem/spectral/internal/transport"
 	otlpmetricgrpc "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/metric"
@@ -66,6 +68,11 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 
 	nodeCtx, stopNode := context.WithCancel(context.Background())
 
+	var reports chan collector.Report
+	if cfg.CollectorURL != "" {
+		reports = make(chan collector.Report, 1)
+	}
+
 	node := node.NewNode(
 		node.NodeConfig{
 			ListenAddr: cfg.ListenAddr,
@@ -74,6 +81,7 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 			Metrics: node.NodeMetrics{
 				PongsReceived: pongsReceived,
 			},
+			Telemetry: reports,
 		},
 		tr,
 		logger.With("component", "node"),
@@ -93,6 +101,16 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 		return nil
 	}))
 	g.Go(supervise("api", stopping, api.Serve))
+	if reports != nil {
+		exporter := telemetry.NewExporter(
+			telemetry.ExporterConfig{CollectorURL: cfg.CollectorURL},
+			reports,
+			logger.With("component", "telemetry"),
+		)
+		g.Go(supervise("telemetry", stopping, func() error {
+			return exporter.Run(stopping)
+		}))
+	}
 
 	var shutdownErr error
 	g.Go(func() error {
