@@ -1,5 +1,7 @@
 KIND_CLUSTER := spectral-dev
 SPCTRLD_IMAGE := spctrld:dev
+COLLECTOR_IMAGE := collector:dev
+VERSION ?= $(shell git describe --tags --always --dirty)
 SPCTRLD_NAMESPACE := spectral
 SPCTRLD_DEPLOYMENT := spctrld
 
@@ -26,7 +28,11 @@ observability-apply:
 
 .PHONY: spctrld-build
 spctrld-build:
-	docker build --tag $(SPCTRLD_IMAGE) .
+	docker build --file cmd/spctrld/Dockerfile --build-arg VERSION=$(VERSION) --tag $(SPCTRLD_IMAGE) .
+
+.PHONY: collector-build
+collector-build:
+	docker build --file cmd/collector/Dockerfile --build-arg VERSION=$(VERSION) --tag $(COLLECTOR_IMAGE) .
 
 .PHONY: spctrld-load
 spctrld-load:

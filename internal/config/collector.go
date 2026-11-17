@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
+
+	"github.com/cap-theorem/spectral/internal/version"
 )
 
 type CollectorCLIConfig struct {
@@ -18,11 +20,13 @@ type CollectorCLIConfig struct {
 	LogFormat string     `name:"log-format" default:"text" enum:"text,json" help:"Log format."`
 
 	DrainTimeout time.Duration `name:"drain-timeout" default:"10s" help:"Graceful shutdown timeout."`
+
+	Version kong.VersionFlag `name:"version" help:"Print version and exit."`
 }
 
 func ParseCollectorCLI() CollectorCLIConfig {
 	var cfg CollectorCLIConfig
-	kong.Parse(&cfg, kong.Name("collector"), kong.Description("Collect spectral overlay topology and compute its spectral gap."))
+	kong.Parse(&cfg, kong.Name("collector"), kong.Vars{"version": version.Version}, kong.Description("Collect spectral overlay topology and compute its spectral gap."))
 	return cfg
 }
 

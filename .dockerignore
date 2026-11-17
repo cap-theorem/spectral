@@ -1,2 +1,10 @@
 .git
+.github
 .env
+secrets
+assets
+docs
+infra
+scripts
+*.md
+Makefile
