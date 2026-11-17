@@ -22,7 +22,8 @@ const (
 )
 
 type Node struct {
-	self wire.Peer
+	self  wire.Peer
+	state State
 
 	lease *Lease
 
@@ -69,6 +70,7 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 
 	n := &Node{
 		self:        self,
+		state:       StateActive,
 		lease:       nil,
 		reg:         newRegistry(),
 		ov:          newOverlay(self.ID, cfg.Overlay),
@@ -145,6 +147,23 @@ func (n *Node) Status(ctx context.Context) (Status, error) {
 	}
 }
 
+func (n *Node) Leave(ctx context.Context) error {
+	req := leaveRequest{Reply: make(chan struct{}, 1)}
+
+	select {
+	case n.inbox <- req:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	select {
+	case <-req.Reply:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (n *Node) Run(ctx context.Context) {
 	n.logger.Info("Node started", "id", n.self.ID, "address", n.self.Address)
 
@@ -167,6 +186,10 @@ func (n *Node) Run(ctx context.Context) {
 }
 
 func (n *Node) tick(now time.Time) {
+	if n.state == StateLeft {
+		return
+	}
+
 	n.overlayTick(now)
 	n.memberTick(now)
 	n.expireLease(now)
@@ -187,7 +210,11 @@ func (n *Node) handleRequest(req request) {
 		req.Reply <- result[Provider]{Value: Provider{Service: req.Service}}
 	case statusRequest:
 		n.logger.Info("status request received")
-		req.Reply <- result[Status]{Value: Status{Ready: true, State: StateActive}}
+		req.Reply <- result[Status]{Value: Status{Ready: n.state == StateActive, State: n.state}}
+	case leaveRequest:
+		n.logger.Info("leave request received")
+		n.leave(time.Now())
+		req.Reply <- struct{}{}
 	case pingRequest:
 		n.logger.Info("ping request received", "peer", req.ID)
 		n.startPing(req)
@@ -195,6 +222,10 @@ func (n *Node) handleRequest(req request) {
 }
 
 func (n *Node) handleEnvelope(env wire.Envelope) {
+	if n.state == StateLeft {
+		return
+	}
+
 	now := time.Now()
 	n.ov.heard(env.From.ID, now)
 	n.clearProbes(env.From.ID)
@@ -257,6 +288,9 @@ func (n *Node) send(to wire.Peer, msg wire.Message) {
 }
 
 func (n *Node) registerService(reg Registration) (Lease, error) {
+	if n.state == StateLeft {
+		return Lease{}, ErrNodeLeft
+	}
 	if err := reg.Validate(); err != nil {
 		return Lease{}, err
 	}

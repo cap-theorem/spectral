@@ -118,6 +118,15 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 
 		stop()
 
+		leaveCtx, cancelLeave := context.WithTimeout(context.Background(), time.Second)
+		if err := node.Leave(leaveCtx); err != nil {
+			shutdownErr = errors.Join(
+				shutdownErr,
+				fmt.Errorf("leave: %w", err),
+			)
+		}
+		cancelLeave()
+
 		ctx, cancel := context.WithTimeout(
 			context.Background(),
 			cfg.DrainTimeout,

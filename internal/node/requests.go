@@ -12,6 +12,7 @@ var (
 	ErrInvalidRegistration       = errors.New("invalid registration")
 	ErrTokenGenerationFail       = errors.New("failed to generate token")
 	ErrUnknownPeer               = errors.New("unknown peer")
+	ErrNodeLeft                  = errors.New("node has left the cluster")
 )
 
 // request is a message submitted to the node's inbox by one of its exported methods.
@@ -42,6 +43,10 @@ type statusRequest struct {
 	Reply chan result[Status]
 }
 
+type leaveRequest struct {
+	Reply chan struct{}
+}
+
 type pingRequest struct {
 	ID       wire.NodeID
 	Nonce    uint64
@@ -53,4 +58,5 @@ func (registerRequest) isRequest() {}
 func (renewRequest) isRequest()    {}
 func (lookupRequest) isRequest()   {}
 func (statusRequest) isRequest()   {}
+func (leaveRequest) isRequest()    {}
 func (pingRequest) isRequest()     {}
