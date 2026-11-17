@@ -39,6 +39,8 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusBadRequest
 		case errors.Is(err, node.ErrRegistrationAlreadyExists):
 			status = http.StatusConflict
+		case errors.Is(err, node.ErrNodeLeft):
+			status = http.StatusServiceUnavailable
 		}
 		writeError(w, status, err)
 		return

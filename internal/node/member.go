@@ -89,13 +89,34 @@ func (n *Node) apply(rec wire.Record, from wire.NodeID, now time.Time) bool {
 
 func (n *Node) refute(rec wire.Record, now time.Time) {
 	own := n.reg.records[n.self.ID].Record
-	if rec.Status == wire.StatusAlive || rec.Inc < own.Inc {
+	if n.state == StateLeft || rec.Status == wire.StatusAlive || rec.Inc < own.Inc {
 		return
 	}
 
 	own.Inc = rec.Inc + 1
 	own.Status = wire.StatusAlive
 	n.apply(own, n.self.ID, now)
+}
+
+func (n *Node) leave(now time.Time) {
+	if n.state == StateLeft {
+		return
+	}
+	n.state = StateLeft
+	n.lease = nil
+
+	own := n.reg.records[n.self.ID].Record
+	own.Inc++
+	own.Status = wire.StatusLeft
+	n.apply(own, n.self.ID, now)
+	n.flush()
+
+	for id, l := range n.ov.links {
+		n.send(l.peer, wire.Unlink{})
+		delete(n.ov.links, id)
+	}
+
+	n.logger.Info("left cluster", "inc", own.Inc)
 }
 
 func isLive(st wire.Status) bool {
