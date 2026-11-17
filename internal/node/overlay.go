@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"slices"
 	"time"
 
@@ -19,6 +20,26 @@ const (
 	linkRequestTimeout = time.Second
 	avoidDuration      = 30 * time.Second
 )
+
+type OverlayKind uint8
+
+const (
+	OverlayHRW OverlayKind = iota
+	OverlayCoin
+)
+
+var ErrUnknownOverlay = errors.New("unknown overlay")
+
+func ParseOverlay(s string) (OverlayKind, error) {
+	switch s {
+	case "hrw":
+		return OverlayHRW, nil
+	case "coin":
+		return OverlayCoin, nil
+	default:
+		return 0, ErrUnknownOverlay
+	}
+}
 
 type link struct {
 	peer     wire.Peer
@@ -43,13 +64,13 @@ type overlay struct {
 	avoid   map[wire.NodeID]time.Time
 
 	dirty bool
-	coin  bool
+	kind  OverlayKind
 }
 
-func newOverlay(self wire.NodeID, coin bool) overlay {
+func newOverlay(self wire.NodeID, kind OverlayKind) overlay {
 	return overlay{
 		self:    self,
-		coin:    coin,
+		kind:    kind,
 		want:    make(map[wire.NodeID]wire.Peer),
 		links:   make(map[wire.NodeID]link),
 		pending: make(map[wire.NodeID]linkRequest),
@@ -97,7 +118,7 @@ func (o *overlay) recompute(live []wire.Record, now time.Time) {
 		cands = append(cands, candidate{rank: rank(o.self, id), peer: rec.Peer})
 	}
 
-	if o.coin {
+	if o.kind == OverlayCoin {
 		o.pickCoin(cands)
 		return
 	}

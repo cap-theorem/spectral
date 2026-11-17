@@ -67,7 +67,7 @@ func TestOverlayRecompute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			live := liveRecords(20)
-			o := newOverlay(live[0].Peer.ID, false)
+			o := newOverlay(live[0].Peer.ID, OverlayHRW)
 			in, ineligible := tt.edit(&o, live, best(o.self, live))
 
 			o.recompute(in, now)
@@ -98,18 +98,18 @@ func TestOverlayRecompute(t *testing.T) {
 
 func TestOverlayRecomputeStable(t *testing.T) {
 	live := liveRecords(50)
-	a := newOverlay(live[0].Peer.ID, false)
+	a := newOverlay(live[0].Peer.ID, OverlayHRW)
 	a.recompute(live, time.Unix(100, 0))
 
 	reversed := slices.Clone(live)
 	slices.Reverse(reversed)
-	again := newOverlay(live[0].Peer.ID, false)
+	again := newOverlay(live[0].Peer.ID, OverlayHRW)
 	again.recompute(reversed, time.Unix(100, 0))
 	if !maps.Equal(a.want, again.want) {
 		t.Fatalf("got %v for reversed input, want %v", again.want, a.want)
 	}
 
-	b := newOverlay(live[1].Peer.ID, false)
+	b := newOverlay(live[1].Peer.ID, OverlayHRW)
 	b.recompute(live, time.Unix(100, 0))
 	if maps.Equal(a.want, b.want) {
 		t.Fatalf("nodes %v and %v picked the same peers", a.self, b.self)
@@ -165,7 +165,7 @@ func TestOverlayCoin(t *testing.T) {
 	overlays := make([]overlay, len(live))
 	total := 0
 	for i, rec := range live {
-		overlays[i] = newOverlay(rec.Peer.ID, true)
+		overlays[i] = newOverlay(rec.Peer.ID, OverlayCoin)
 		overlays[i].recompute(live, now)
 		total += len(overlays[i].want)
 
@@ -186,5 +186,27 @@ func TestOverlayCoin(t *testing.T) {
 
 	if mean := float64(total) / float64(len(live)); mean < 2*K-1.5 || mean > 2*K+1.5 {
 		t.Fatalf("mean degree = %.2f, want about %d", mean, 2*K)
+	}
+}
+
+func TestParseOverlay(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    OverlayKind
+		wantErr bool
+	}{
+		{"hrw", OverlayHRW, false},
+		{"coin", OverlayCoin, false},
+		{"nope", 0, true},
+		{"", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := ParseOverlay(tt.in)
+			if (err != nil) != tt.wantErr || got != tt.want {
+				t.Fatalf("ParseOverlay(%q) = %v, %v; want %v, wantErr %v", tt.in, got, err, tt.want, tt.wantErr)
+			}
+		})
 	}
 }
