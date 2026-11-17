@@ -210,3 +210,12 @@ func TestParseOverlay(t *testing.T) {
 		})
 	}
 }
+
+func TestAddLinkRejectsSelfAndZeroID(t *testing.T) {
+	o := newOverlay(uuid.NewV4(), OverlayHRW)
+	o.addLink(wire.Peer{ID: o.self}, true, time.Now())
+	o.addLink(wire.Peer{}, true, time.Now())
+	if len(o.links) != 0 {
+		t.Fatalf("links = %v, want none", o.links)
+	}
+}

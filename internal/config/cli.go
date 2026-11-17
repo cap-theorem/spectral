@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"net/url"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -21,6 +22,8 @@ type DaemonCLIConfig struct {
 
 	Bootstrap []string `name:"bootstrap" sep:"none" help:"Existing peer host:port to contact when joining. May be repeated."`
 	Overlay   string   `name:"overlay" default:"hrw" enum:"hrw,coin" help:"Overlay link rule: hrw or coin."`
+
+	CollectorURL string `name:"collector-url" help:"Topology collector base URL (e.g. http://collector:8100). Unset disables topology reports."`
 
 	LogLevel  slog.Level `name:"log-level" default:"info" help:"Log level: debug, info, warn, error."`
 	LogFormat string     `name:"log-format" default:"text" enum:"text,json" help:"Log format."`
@@ -49,6 +52,13 @@ func (d *DaemonCLIConfig) Validate() error {
 
 	if d.DrainTimeout < 0 {
 		return fmt.Errorf("--drain-timeout must be a positive value")
+	}
+
+	if d.CollectorURL != "" {
+		u, err := url.Parse(d.CollectorURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("--collector-url must be an http(s) URL with a host")
+		}
 	}
 
 	for _, addr := range d.Bootstrap {

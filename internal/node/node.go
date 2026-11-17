@@ -10,6 +10,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/cap-theorem/spectral/internal/collector"
 	"github.com/cap-theorem/spectral/internal/transport"
 	"github.com/cap-theorem/spectral/internal/wire"
 	"go.opentelemetry.io/otel/metric"
@@ -34,6 +35,11 @@ type Node struct {
 	logger      *slog.Logger
 	metrics     NodeMetrics
 	pendingPing map[uint64]pendingPing
+
+	telemetry  chan collector.Report
+	lastReport []collector.ReportLink
+	nextReport time.Time
+	keepalive  time.Time
 }
 
 type NodeMetrics struct {
@@ -52,6 +58,7 @@ type NodeConfig struct {
 	Seeds      []string
 	Overlay    OverlayKind
 	Metrics    NodeMetrics
+	Telemetry  chan collector.Report
 }
 
 func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node {
@@ -71,6 +78,7 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 		logger:      logger,
 		metrics:     cfg.Metrics,
 		pendingPing: make(map[uint64]pendingPing),
+		telemetry:   cfg.Telemetry,
 	}
 	n.reg.merge(wire.Record{Peer: self, Status: wire.StatusAlive}, time.Now())
 
@@ -163,6 +171,7 @@ func (n *Node) tick(now time.Time) {
 	n.memberTick(now)
 	n.expireLease(now)
 	n.expirePings(now)
+	n.reportTick(now)
 }
 
 func (n *Node) handleRequest(req request) {
