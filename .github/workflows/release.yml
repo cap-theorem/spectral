@@ -96,7 +96,7 @@ jobs:
           if [[ "$v" == *-* ]]; then
             prerelease=(--prerelease)
           fi
-          notes=$(printf '```\nghcr.io/cap-theorem/spctrld:%s\nghcr.io/cap-theorem/spectral-collector:%s\n```\n' "$v" "$v")
+          notes=$(printf 'Images:\n\n    ghcr.io/cap-theorem/spctrld:%s\n    ghcr.io/cap-theorem/spectral-collector:%s\n' "$v" "$v")
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
