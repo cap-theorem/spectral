@@ -197,6 +197,7 @@ func (n *Node) handleRequest(req request) {
 func (n *Node) handleEnvelope(env wire.Envelope) {
 	now := time.Now()
 	n.ov.heard(env.From.ID, now)
+	n.clearProbes(env.From.ID)
 
 	switch msg := env.Msg.(type) {
 	case wire.Ping:
@@ -211,6 +212,9 @@ func (n *Node) handleEnvelope(env wire.Envelope) {
 		if ok && pending.peerID == env.From.ID && env.To == n.self.ID {
 			delete(n.pendingPing, msg.Nonce)
 			pending.reply <- result[time.Duration]{Value: time.Since(pending.started)}
+		}
+		if env.To == n.self.ID {
+			n.handleRelayPong(env.From, msg)
 		}
 	case wire.Link:
 		n.ov.addLink(env.From, true, now)
@@ -237,6 +241,10 @@ func (n *Node) handleEnvelope(env wire.Envelope) {
 		n.handleAEHeads(env.From, msg, now)
 	case wire.AEWant:
 		n.handleAEWant(env.From, msg, now)
+	case wire.PingReq:
+		n.handlePingReq(env.From, msg, now)
+	case wire.PingReqAck:
+		n.handlePingReqAck(env.From, msg)
 	}
 }
 

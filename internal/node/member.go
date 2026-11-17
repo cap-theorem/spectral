@@ -217,11 +217,96 @@ func (n *Node) sendRecords(to wire.Peer, recs []wire.Record) {
 	}
 }
 
-func (n *Node) startProbe(target wire.Peer, now time.Time) {}
+func (n *Node) startProbe(target wire.Peer, now time.Time) {
+	e, ok := n.reg.records[target.ID]
+	if !ok || e.Status != wire.StatusAlive {
+		return
+	}
+	for _, p := range n.mem.probes {
+		if p.target.ID == target.ID {
+			return
+		}
+	}
 
-func (n *Node) handlePingReq(from wire.Peer, msg wire.PingReq, now time.Time) {}
+	nonce := rand.Uint64()
+	n.mem.probes[nonce] = probe{target: target, deadline: now.Add(probeTimeout)}
+	n.send(target, wire.Ping{Nonce: nonce})
 
-func (n *Node) handlePingReqAck(from wire.Peer, msg wire.PingReqAck) {}
+	var helpers []wire.Peer
+	for id, l := range n.ov.links {
+		if id != target.ID {
+			helpers = append(helpers, l.peer)
+		}
+	}
+	rand.Shuffle(len(helpers), func(i, j int) {
+		helpers[i], helpers[j] = helpers[j], helpers[i]
+	})
+	helpers = helpers[:min(probeFanout, len(helpers))]
+	for _, h := range helpers {
+		n.send(h, wire.PingReq{Nonce: nonce, Target: target})
+	}
+
+	n.logger.Debug("probe started", "peer", target.ID, "helpers", len(helpers))
+}
+
+func (n *Node) handlePingReq(from wire.Peer, msg wire.PingReq, now time.Time) {
+	if msg.Target.ID == n.self.ID || msg.Target.ID == (wire.NodeID{}) {
+		return
+	}
+
+	nonce := rand.Uint64()
+	n.mem.relays[nonce] = relay{
+		requester: from,
+		target:    msg.Target.ID,
+		nonce:     msg.Nonce,
+		deadline:  now.Add(probeTimeout),
+	}
+	n.send(msg.Target, wire.Ping{Nonce: nonce})
+}
+
+func (n *Node) handleRelayPong(from wire.Peer, msg wire.Pong) {
+	r, ok := n.mem.relays[msg.Nonce]
+	if !ok || r.target != from.ID {
+		return
+	}
+
+	delete(n.mem.relays, msg.Nonce)
+	n.send(r.requester, wire.PingReqAck{Nonce: r.nonce, Target: r.target})
+}
+
+func (n *Node) handlePingReqAck(from wire.Peer, msg wire.PingReqAck) {
+	p, ok := n.mem.probes[msg.Nonce]
+	if !ok || p.target.ID != msg.Target {
+		return
+	}
+
+	delete(n.mem.probes, msg.Nonce)
+	n.logger.Debug("probe acked by helper", "peer", msg.Target, "helper", from.ID)
+}
+
+func (n *Node) clearProbes(id wire.NodeID) {
+	for nonce, p := range n.mem.probes {
+		if p.target.ID == id {
+			delete(n.mem.probes, nonce)
+		}
+	}
+}
+
+func (n *Node) expireProbes(now time.Time) {
+	for nonce, p := range n.mem.probes {
+		if now.After(p.deadline) {
+			delete(n.mem.probes, nonce)
+			n.logger.Debug("probe failed", "peer", p.target.ID)
+			n.suspect(p.target.ID, now)
+		}
+	}
+
+	for nonce, r := range n.mem.relays {
+		if now.After(r.deadline) {
+			delete(n.mem.relays, nonce)
+		}
+	}
+}
 
 func (n *Node) suspect(id wire.NodeID, now time.Time) {
 	e, ok := n.reg.records[id]
@@ -260,6 +345,7 @@ func (n *Node) memberTick(now time.Time) {
 		}
 	}
 
+	n.expireProbes(now)
 	n.expireSuspects(now)
 	n.expireTombstones(now)
 }
