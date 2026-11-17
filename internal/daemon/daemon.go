@@ -19,6 +19,7 @@ import (
 	"github.com/cap-theorem/spectral/internal/transport"
 	otlpmetricgrpc "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
 )
@@ -41,17 +42,21 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 		syscall.SIGTERM,
 	)
 
-	// exporters for metrics
-	exporterCtx, cancelExporter := context.WithTimeout(sigCtx, 5*time.Second)
-	exporter, err := otlpmetricgrpc.New(exporterCtx)
-	cancelExporter()
-	if err != nil {
-		return fmt.Errorf("initialize metrics exporter: %w", err)
+	var meterProvider metric.MeterProvider = noop.NewMeterProvider()
+	var sdkProvider *sdkmetric.MeterProvider
+	if cfg.OTLPEndpoint != "" {
+		exporterCtx, cancelExporter := context.WithTimeout(sigCtx, 5*time.Second)
+		exporter, err := otlpmetricgrpc.New(exporterCtx, otlpmetricgrpc.WithEndpointURL(cfg.OTLPEndpoint))
+		cancelExporter()
+		if err != nil {
+			return fmt.Errorf("initialize metrics exporter: %w", err)
+		}
+		sdkProvider = sdkmetric.NewMeterProvider(
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
+		)
+		meterProvider = sdkProvider
 	}
-	provider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-	)
-	meter := provider.Meter("github.com/cap-theorem/spectral/internal/node")
+	meter := meterProvider.Meter("github.com/cap-theorem/spectral/internal/node")
 	pongsReceived, err := meter.Int64Counter(
 		"spectral.pong.recieved",
 		metric.WithDescription("Pongs recieved by this node"),
@@ -145,11 +150,13 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 	})
 
 	runErr := g.Wait()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.DrainTimeout)
-	defer cancel()
 
-	if err := provider.Shutdown(shutdownCtx); err != nil {
-		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("metrics shutdown: %w", err))
+	if sdkProvider != nil {
+		metricsCtx, cancelMetrics := context.WithTimeout(context.Background(), 2*time.Second)
+		if err := sdkProvider.Shutdown(metricsCtx); err != nil {
+			logger.Warn("final metrics flush failed", "err", err)
+		}
+		cancelMetrics()
 	}
 
 	return errors.Join(runErr, shutdownErr)

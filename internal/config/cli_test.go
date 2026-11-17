@@ -28,6 +28,8 @@ func TestDaemonCLIConfig(t *testing.T) {
 		{"collector url", []string{"--listen-addr", "127.0.0.1:7000", "--collector-url", "http://collector:8100"}, false},
 		{"collector url without scheme", []string{"--listen-addr", "127.0.0.1:7000", "--collector-url", "collector:8100"}, true},
 		{"listen port 0", []string{"--listen-addr", "127.0.0.1:0"}, true},
+		{"otlp endpoint", []string{"--listen-addr", "127.0.0.1:7000", "--otlp-endpoint", "http://otel-collector:4317"}, false},
+		{"otlp endpoint without scheme", []string{"--listen-addr", "127.0.0.1:7000", "--otlp-endpoint", "otel-collector:4317"}, true},
 	}
 
 	for _, tt := range tests {
@@ -43,5 +45,22 @@ func TestDaemonCLIConfig(t *testing.T) {
 				t.Fatalf("Parse(%v) error = %v, wantErr %v", tt.args, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestOTLPEndpointFromEnv(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
+
+	var cfg DaemonCLIConfig
+	parser, err := kong.New(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := parser.Parse([]string{"--listen-addr", "127.0.0.1:7000"}); err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if cfg.OTLPEndpoint != "http://otel-collector:4317" {
+		t.Fatalf("OTLPEndpoint = %q, want %q", cfg.OTLPEndpoint, "http://otel-collector:4317")
 	}
 }

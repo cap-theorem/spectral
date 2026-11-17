@@ -26,6 +26,7 @@ type DaemonCLIConfig struct {
 	Overlay   string   `name:"overlay" default:"hrw" enum:"hrw,coin" help:"Overlay link rule: hrw or coin."`
 
 	CollectorURL string `name:"collector-url" help:"Topology collector base URL (e.g. http://collector:8100). Unset disables topology reports."`
+	OTLPEndpoint string `name:"otlp-endpoint" env:"OTEL_EXPORTER_OTLP_ENDPOINT" help:"OTLP gRPC endpoint for metrics (e.g. http://otel-collector:4317). Unset disables metrics export."`
 
 	LogLevel  slog.Level `name:"log-level" default:"info" help:"Log level: debug, info, warn, error."`
 	LogFormat string     `name:"log-format" default:"text" enum:"text,json" help:"Log format."`
@@ -62,6 +63,13 @@ func (d *DaemonCLIConfig) Validate() error {
 		u, err := url.Parse(d.CollectorURL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("--collector-url must be an http(s) URL with a host")
+		}
+	}
+
+	if d.OTLPEndpoint != "" {
+		u, err := url.Parse(d.OTLPEndpoint)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("--otlp-endpoint must be an http(s) URL with a host")
 		}
 	}
 
