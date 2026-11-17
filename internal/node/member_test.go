@@ -61,18 +61,31 @@ func TestSilentLinkSuspectsThenDies(t *testing.T) {
 
 	silent := t0.Add(linkTimeout + time.Millisecond)
 	n.overlayTick(silent)
-	if got := n.reg.records[x.ID].Status; got != wire.StatusSuspect {
-		t.Fatalf("after silent link: %v, want Suspect", got)
+	if got := n.reg.records[x.ID].Status; got != wire.StatusAlive {
+		t.Fatalf("after silent link: %v, want Alive while probing", got)
 	}
 	if _, ok := n.ov.links[x.ID]; ok {
 		t.Fatal("silent link kept")
 	}
+	if len(n.mem.probes) != 1 {
+		t.Fatalf("probes = %d, want 1", len(n.mem.probes))
+	}
 
-	n.expireSuspects(silent.Add(suspectTimeout))
+	n.expireProbes(silent.Add(probeTimeout))
+	if got := n.reg.records[x.ID].Status; got != wire.StatusAlive {
+		t.Fatalf("at probe timeout: %v, want Alive", got)
+	}
+	failed := silent.Add(probeTimeout + time.Millisecond)
+	n.expireProbes(failed)
+	if got := n.reg.records[x.ID].Status; got != wire.StatusSuspect {
+		t.Fatalf("after probe timeout: %v, want Suspect", got)
+	}
+
+	n.expireSuspects(failed.Add(suspectTimeout))
 	if got := n.reg.records[x.ID].Status; got != wire.StatusSuspect {
 		t.Fatalf("at suspect timeout: %v, want Suspect", got)
 	}
-	n.expireSuspects(silent.Add(suspectTimeout + time.Millisecond))
+	n.expireSuspects(failed.Add(suspectTimeout + time.Millisecond))
 	if got := n.reg.records[x.ID].Status; got != wire.StatusDead {
 		t.Fatalf("after suspect timeout: %v, want Dead", got)
 	}
