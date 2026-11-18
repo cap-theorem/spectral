@@ -11,6 +11,10 @@ type RegistrationRequest struct {
 	TTL        string `json:"ttl"`
 }
 
+type RenewRequest struct {
+	Token string `json:"token"`
+}
+
 type LeaseResponse struct {
 	Token     string    `json:"token"`
 	TTL       string    `json:"ttl"`

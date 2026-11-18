@@ -13,6 +13,7 @@ var (
 	ErrTokenGenerationFail       = errors.New("failed to generate token")
 	ErrUnknownPeer               = errors.New("unknown peer")
 	ErrNodeLeft                  = errors.New("node has left the cluster")
+	ErrLeaseNotFound             = errors.New("lease not found")
 )
 
 // request is a message submitted to the node's inbox by one of its exported methods.
@@ -32,6 +33,7 @@ type registerRequest struct {
 
 type renewRequest struct {
 	Token string
+	Reply chan result[Lease]
 }
 
 type lookupRequest struct {
