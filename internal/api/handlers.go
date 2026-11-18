@@ -58,12 +58,36 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleRenew(w http.ResponseWriter, r *http.Request) {
-	if err := a.node.Renew(r.Context(), "mock-lease-token"); err != nil {
-		writeError(w, http.StatusGatewayTimeout, err)
+	var req RenewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Token == "" {
+		writeError(w, http.StatusBadRequest, errors.New("token is required"))
 		return
 	}
 
-	w.WriteHeader(http.StatusAccepted)
+	lease, err := a.node.Renew(r.Context(), req.Token)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+			status = http.StatusGatewayTimeout
+		case errors.Is(err, node.ErrLeaseNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, node.ErrNodeLeft):
+			status = http.StatusServiceUnavailable
+		}
+		writeError(w, status, err)
+		return
+	}
+
+	writeJSON(w, LeaseResponse{
+		Token:     lease.Token,
+		TTL:       lease.TTL.String(),
+		ExpiresAt: lease.ExpiresAt,
+	})
 }
 
 func (a *API) handleLookup(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/binary"
 	"encoding/hex"
 	"log/slog"
@@ -105,12 +106,20 @@ func (n *Node) Register(ctx context.Context, reg Registration) (Lease, error) {
 	}
 }
 
-func (n *Node) Renew(ctx context.Context, token string) error {
+func (n *Node) Renew(ctx context.Context, token string) (Lease, error) {
+	req := renewRequest{Token: token, Reply: make(chan result[Lease], 1)}
+
 	select {
-	case n.inbox <- renewRequest{Token: token}:
-		return nil
+	case n.inbox <- req:
 	case <-ctx.Done():
-		return ctx.Err()
+		return Lease{}, ctx.Err()
+	}
+
+	select {
+	case res := <-req.Reply:
+		return res.Value, res.Err
+	case <-ctx.Done():
+		return Lease{}, ctx.Err()
 	}
 }
 
@@ -205,7 +214,9 @@ func (n *Node) handleRequest(req request) {
 		lease, err := n.registerService(req.Registration)
 		req.Reply <- result[Lease]{Value: lease, Err: err}
 	case renewRequest:
-		n.logger.Info("renew request received", "token", req.Token)
+		n.logger.Info("renew request received")
+		lease, err := n.renewService(req.Token)
+		req.Reply <- result[Lease]{Value: lease, Err: err}
 	case lookupRequest:
 		n.logger.Info("lookup request received", "service", req.Service)
 		provider, err := n.lookupService(req.Service)
@@ -332,6 +343,20 @@ func (n *Node) lookupService(service string) (Provider, error) {
 
 	svc := providers[mrand.IntN(len(providers))]
 	return Provider{Service: svc.Name, Endpoint: svc.Endpoint}, nil
+}
+
+func (n *Node) renewService(token string) (Lease, error) {
+	if n.state == StateLeft {
+		return Lease{}, ErrNodeLeft
+	}
+
+	now := time.Now()
+	if n.lease == nil || subtle.ConstantTimeCompare([]byte(token), []byte(n.lease.Token)) != 1 || !now.Before(n.lease.ExpiresAt) {
+		return Lease{}, ErrLeaseNotFound
+	}
+
+	n.lease.ExpiresAt = now.Add(n.lease.TTL)
+	return *n.lease, nil
 }
 
 func generateHexToken(byteLength int) (string, error) {
