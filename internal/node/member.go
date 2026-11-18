@@ -22,6 +22,7 @@ const (
 	maxUpdateRecords    = 30
 	maxAEHeads          = 200
 	seedResolveTimeout  = 200 * time.Millisecond
+	rejoinInterval      = 15 * time.Second
 )
 
 type queued struct {
@@ -47,6 +48,7 @@ type membership struct {
 	seedSynced   bool
 	nextSeedPull time.Time
 	nextAE       time.Time
+	nextRejoin   time.Time
 
 	outbox []queued
 	probes map[uint64]probe
@@ -345,6 +347,13 @@ func (n *Node) memberTick(now time.Time) {
 		n.mem.nextAE = now.Add(antiEntropyInterval)
 		if peer, ok := n.randomLink(); ok {
 			n.sendDigest(peer)
+		}
+	}
+
+	if !now.Before(n.mem.nextRejoin) {
+		n.mem.nextRejoin = now.Add(rejoinInterval)
+		if len(n.ov.links) == 0 || len(n.reg.live()) <= 1 {
+			n.mem.seedSynced = false
 		}
 	}
 
