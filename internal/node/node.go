@@ -323,6 +323,8 @@ func (n *Node) registerService(reg Registration) (Lease, error) {
 }
 
 func (n *Node) lookupService(service string) (Provider, error) {
+	n.expireLease(time.Now())
+
 	providers := n.reg.lookup(service)
 	if len(providers) == 0 {
 		return Provider{}, ErrServiceNotFound
