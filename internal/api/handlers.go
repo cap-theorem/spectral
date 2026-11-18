@@ -91,10 +91,19 @@ func (a *API) handleRenew(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleLookup(w http.ResponseWriter, r *http.Request) {
-	provider, err := a.node.Lookup(r.Context(), "payments-api")
+	service := r.URL.Query().Get("service")
+	if service == "" {
+		writeError(w, http.StatusBadRequest, errors.New("service is required"))
+		return
+	}
+
+	provider, err := a.node.Lookup(r.Context(), service)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		switch {
+		case errors.Is(err, node.ErrServiceNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 			status = http.StatusGatewayTimeout
 		}
 		writeError(w, status, err)

@@ -13,6 +13,7 @@ var (
 	ErrTokenGenerationFail       = errors.New("failed to generate token")
 	ErrUnknownPeer               = errors.New("unknown peer")
 	ErrNodeLeft                  = errors.New("node has left the cluster")
+	ErrServiceNotFound           = errors.New("service not found")
 	ErrLeaseNotFound             = errors.New("lease not found")
 )
 
