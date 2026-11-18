@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log/slog"
+	mrand "math/rand/v2"
 	"net/netip"
 	"time"
 	"uuid"
@@ -322,11 +323,12 @@ func (n *Node) registerService(reg Registration) (Lease, error) {
 }
 
 func (n *Node) lookupService(service string) (Provider, error) {
-	svc, ok := n.reg.pick(service)
-	if !ok {
+	providers := n.reg.lookup(service)
+	if len(providers) == 0 {
 		return Provider{}, ErrServiceNotFound
 	}
 
+	svc := providers[mrand.IntN(len(providers))]
 	return Provider{Service: svc.Name, Endpoint: svc.Endpoint}, nil
 }
 
