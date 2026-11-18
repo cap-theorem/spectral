@@ -17,26 +17,15 @@ const (
 	StateLeft    State = "left"
 )
 
-type RegistrationKey struct {
-	Service    string
-	InstanceID string
-}
-
-type RegistrationEntry struct {
-	Provider Provider
-	Lease    Lease
-}
-
 type Registration struct {
-	Service    string
-	InstanceID string
-	Endpoint   string
-	TTL        time.Duration
+	Service  string
+	Endpoint string
+	TTL      time.Duration
 }
 
 func (r Registration) Validate() error {
-	if strings.TrimSpace(r.Service) == "" || strings.TrimSpace(r.InstanceID) == "" {
-		return fmt.Errorf("%w: service and instance_id are required", ErrInvalidRegistration)
+	if strings.TrimSpace(r.Service) == "" {
+		return fmt.Errorf("%w: service is required", ErrInvalidRegistration)
 	}
 	if r.TTL <= 0 {
 		return fmt.Errorf("%w: ttl must be positive", ErrInvalidRegistration)
@@ -64,9 +53,8 @@ type Lease struct {
 }
 
 type Provider struct {
-	Service    string
-	InstanceID string
-	Endpoint   string
+	Service  string
+	Endpoint string
 }
 
 type Status struct {

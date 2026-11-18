@@ -8,10 +8,9 @@ import (
 
 func TestRegistrationValidate(t *testing.T) {
 	valid := Registration{
-		Service:    "payments",
-		InstanceID: "payments-1",
-		Endpoint:   "http://10.0.0.1:8000",
-		TTL:        10 * time.Second,
+		Service:  "payments",
+		Endpoint: "http://10.0.0.1:8000",
+		TTL:      10 * time.Second,
 	}
 
 	tests := []struct {
@@ -23,7 +22,6 @@ func TestRegistrationValidate(t *testing.T) {
 		{"https with path", func(r *Registration) { r.Endpoint = "https://pay.svc:443/v1" }, false},
 		{"ipv6 host", func(r *Registration) { r.Endpoint = "http://[::1]:8000" }, false},
 		{"blank service", func(r *Registration) { r.Service = " " }, true},
-		{"blank instance", func(r *Registration) { r.InstanceID = "" }, true},
 		{"zero ttl", func(r *Registration) { r.TTL = 0 }, true},
 		{"negative ttl", func(r *Registration) { r.TTL = -time.Second }, true},
 		{"no scheme", func(r *Registration) { r.Endpoint = "10.0.0.1:80" }, true},

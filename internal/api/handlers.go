@@ -25,10 +25,9 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lease, err := a.node.Register(r.Context(), node.Registration{
-		Service:    reg.Service,
-		InstanceID: reg.InstanceID,
-		Endpoint:   reg.Endpoint,
-		TTL:        ttl,
+		Service:  reg.Service,
+		Endpoint: reg.Endpoint,
+		TTL:      ttl,
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -111,9 +110,8 @@ func (a *API) handleLookup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, ProviderResponse{
-		Service:    provider.Service,
-		InstanceID: provider.InstanceID,
-		Endpoint:   provider.Endpoint,
+		Service:  provider.Service,
+		Endpoint: provider.Endpoint,
 	})
 }
 
