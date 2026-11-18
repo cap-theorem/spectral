@@ -3,6 +3,7 @@ package node
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"math/rand/v2"
 	"slices"
 	"time"
 
@@ -95,6 +96,15 @@ func headHash(h wire.Head) uint64 {
 	b[24] = byte(h.Status)
 	sum := sha256.Sum256(b[:])
 	return binary.BigEndian.Uint64(sum[:8])
+}
+
+func (r *registry) pick(service string) (wire.Service, bool) {
+	providers := r.lookup(service)
+	if len(providers) == 0 {
+		return wire.Service{}, false
+	}
+
+	return providers[rand.IntN(len(providers))], true
 }
 
 func newer(inc uint64, st wire.Status, oldInc uint64, oldSt wire.Status) bool {

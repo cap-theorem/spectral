@@ -207,7 +207,8 @@ func (n *Node) handleRequest(req request) {
 		n.logger.Info("renew request received", "token", req.Token)
 	case lookupRequest:
 		n.logger.Info("lookup request received", "service", req.Service)
-		req.Reply <- result[Provider]{Value: Provider{Service: req.Service}}
+		provider, err := n.lookupService(req.Service)
+		req.Reply <- result[Provider]{Value: provider, Err: err}
 	case statusRequest:
 		n.logger.Info("status request received")
 		req.Reply <- result[Status]{Value: Status{Ready: n.state == StateActive, State: n.state}}
@@ -318,6 +319,15 @@ func (n *Node) registerService(reg Registration) (Lease, error) {
 	}
 
 	return *n.lease, nil
+}
+
+func (n *Node) lookupService(service string) (Provider, error) {
+	svc, ok := n.reg.pick(service)
+	if !ok {
+		return Provider{}, ErrServiceNotFound
+	}
+
+	return Provider{Service: svc.Name, Endpoint: svc.Endpoint}, nil
 }
 
 func generateHexToken(byteLength int) (string, error) {
