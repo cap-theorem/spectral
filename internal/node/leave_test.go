@@ -12,10 +12,9 @@ import (
 
 func testRegistration() Registration {
 	return Registration{
-		Service:    "payments-api",
-		InstanceID: "i-1",
-		Endpoint:   "http://127.0.0.1:9000",
-		TTL:        time.Minute,
+		Service:  "payments-api",
+		Endpoint: "http://127.0.0.1:9000",
+		TTL:      time.Minute,
 	}
 }
 

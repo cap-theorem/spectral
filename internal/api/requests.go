@@ -5,10 +5,9 @@ import (
 )
 
 type RegistrationRequest struct {
-	Service    string `json:"service"`
-	InstanceID string `json:"instance_id"`
-	Endpoint   string `json:"endpoint"`
-	TTL        string `json:"ttl"`
+	Service  string `json:"service"`
+	Endpoint string `json:"endpoint"`
+	TTL      string `json:"ttl"`
 }
 
 type RenewRequest struct {
@@ -22,9 +21,8 @@ type LeaseResponse struct {
 }
 
 type ProviderResponse struct {
-	Service    string `json:"service"`
-	InstanceID string `json:"instance_id"`
-	Endpoint   string `json:"endpoint"`
+	Service  string `json:"service"`
+	Endpoint string `json:"endpoint"`
 }
 
 type StatusResponse struct {
