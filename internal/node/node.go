@@ -214,7 +214,7 @@ func (n *Node) handleRequest(req request) {
 		req.Reply <- result[Lease]{Value: lease, Err: err}
 	case renewRequest:
 		n.logger.Info("renew request received")
-		lease, err := n.renewLease(req.Token)
+		lease, err := n.renewService(req.Token)
 		req.Reply <- result[Lease]{Value: lease, Err: err}
 	case lookupRequest:
 		n.logger.Info("lookup request received", "service", req.Service)
@@ -331,7 +331,7 @@ func (n *Node) registerService(reg Registration) (Lease, error) {
 	return *n.lease, nil
 }
 
-func (n *Node) renewLease(token string) (Lease, error) {
+func (n *Node) renewService(token string) (Lease, error) {
 	if n.state == StateLeft {
 		return Lease{}, ErrNodeLeft
 	}
