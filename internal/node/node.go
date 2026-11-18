@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"log/slog"
+	mrand "math/rand/v2"
 	"net/netip"
 	"time"
 	"uuid"
@@ -207,7 +208,8 @@ func (n *Node) handleRequest(req request) {
 		n.logger.Info("renew request received", "token", req.Token)
 	case lookupRequest:
 		n.logger.Info("lookup request received", "service", req.Service)
-		req.Reply <- result[Provider]{Value: Provider{Service: req.Service}}
+		provider, err := n.lookupService(req.Service)
+		req.Reply <- result[Provider]{Value: provider, Err: err}
 	case statusRequest:
 		n.logger.Info("status request received")
 		req.Reply <- result[Status]{Value: Status{Ready: n.state == StateActive, State: n.state}}
@@ -318,6 +320,18 @@ func (n *Node) registerService(reg Registration) (Lease, error) {
 	}
 
 	return *n.lease, nil
+}
+
+func (n *Node) lookupService(service string) (Provider, error) {
+	n.expireLease(time.Now())
+
+	providers := n.reg.lookup(service)
+	if len(providers) == 0 {
+		return Provider{}, ErrServiceNotFound
+	}
+
+	svc := providers[mrand.IntN(len(providers))]
+	return Provider{Service: svc.Name, Endpoint: svc.Endpoint}, nil
 }
 
 func generateHexToken(byteLength int) (string, error) {

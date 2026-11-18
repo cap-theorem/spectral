@@ -13,6 +13,7 @@ var (
 	ErrTokenGenerationFail       = errors.New("failed to generate token")
 	ErrUnknownPeer               = errors.New("unknown peer")
 	ErrNodeLeft                  = errors.New("node has left the cluster")
+	ErrServiceNotFound           = errors.New("service not found")
 )
 
 // request is a message submitted to the node's inbox by one of its exported methods.
