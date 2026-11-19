@@ -106,6 +106,7 @@ func (n *Node) leave(now time.Time) {
 	}
 	n.state = StateLeft
 	n.lease = nil
+	n.instance = ""
 
 	own := n.reg.records[n.self.ID].Record
 	own.Inc++

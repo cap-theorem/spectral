@@ -10,17 +10,22 @@ import (
 
 const ReportPath = "/v1/reports"
 
-const maxLinks = 4096
+const (
+	maxLinks      = 4096
+	maxLabelBytes = 128
+)
 
 var ErrInvalidReport = errors.New("invalid report")
 
 // Report holds all of a node's current links and replaces its previous report.
 type Report struct {
-	ID      wire.NodeID    `json:"id"`
-	Address netip.AddrPort `json:"address"`
-	Seq     uint64         `json:"seq"` // reports with Seq <= the last applied one are ignored
-	Left    bool           `json:"left,omitempty"`
-	Links   []ReportLink   `json:"links"`
+	ID       wire.NodeID    `json:"id"`
+	Address  netip.AddrPort `json:"address"`
+	Seq      uint64         `json:"seq"` // reports with Seq <= the last applied one are ignored
+	Left     bool           `json:"left,omitempty"`
+	Service  string         `json:"service,omitempty"`
+	Instance string         `json:"instance,omitempty"`
+	Links    []ReportLink   `json:"links"`
 }
 
 type ReportLink struct {
@@ -31,6 +36,9 @@ type ReportLink struct {
 func (r Report) Validate() error {
 	if r.ID == (wire.NodeID{}) {
 		return fmt.Errorf("%w: id is required", ErrInvalidReport)
+	}
+	if len(r.Service) > maxLabelBytes || len(r.Instance) > maxLabelBytes {
+		return fmt.Errorf("%w: service and instance must be at most %d bytes", ErrInvalidReport, maxLabelBytes)
 	}
 	if len(r.Links) > maxLinks {
 		return fmt.Errorf("%w: %d links exceeds limit %d", ErrInvalidReport, len(r.Links), maxLinks)

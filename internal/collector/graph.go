@@ -14,11 +14,13 @@ import (
 const dropGrace = 5 * time.Second
 
 type member struct {
-	address netip.AddrPort
-	seq     uint64
-	links   map[wire.NodeID]bool // peer -> Out
-	seen    time.Time
-	dropped map[wire.NodeID]time.Time // peer -> when reports stopped listing it
+	address  netip.AddrPort
+	service  string
+	instance string
+	seq      uint64
+	links    map[wire.NodeID]bool // peer -> Out
+	seen     time.Time
+	dropped  map[wire.NodeID]time.Time // peer -> when reports stopped listing it
 }
 
 type Graph struct {
@@ -58,7 +60,8 @@ func (g *Graph) Apply(r Report, now time.Time) bool {
 		m = &member{dropped: make(map[wire.NodeID]time.Time)}
 		g.members[r.ID] = m
 	}
-	if !known || m.address != r.Address || !maps.Equal(m.links, links) || g.readmits(r.ID, m.seen, links) {
+	relabeled := m.service != r.Service || m.instance != r.Instance
+	if !known || m.address != r.Address || relabeled || !maps.Equal(m.links, links) || g.readmits(r.ID, m.seen, links) {
 		g.epoch++
 	}
 	for peer := range m.links {
@@ -70,6 +73,8 @@ func (g *Graph) Apply(r Report, now time.Time) bool {
 		delete(m.dropped, peer)
 	}
 	m.address = r.Address
+	m.service = r.Service
+	m.instance = r.Instance
 	m.seq = r.Seq
 	m.links = links
 	m.seen = now
@@ -123,6 +128,7 @@ type Frozen struct {
 	Epoch    uint64
 	IDs      []wire.NodeID
 	Addrs    []netip.AddrPort
+	Labels   []Label
 	Adj      csr
 	Orphans  []Node    // presumed dead, left out of Adj
 	OneSided int       // links only one end reports
@@ -191,7 +197,7 @@ func (g *Graph) Freeze(now time.Time) Frozen {
 	ids := make([]wire.NodeID, 0, len(g.members)-len(out))
 	for id, m := range g.members {
 		if out[id] {
-			f.Orphans = append(f.Orphans, Node{ID: id, Address: m.address, State: StateOrphaned, Component: -1})
+			f.Orphans = append(f.Orphans, Node{ID: id, Address: m.address, Service: m.service, Instance: m.instance, State: StateOrphaned, Component: -1})
 		} else {
 			ids = append(ids, id)
 		}
@@ -204,10 +210,12 @@ func (g *Graph) Freeze(now time.Time) Frozen {
 	}
 
 	f.Addrs = make([]netip.AddrPort, len(ids))
+	f.Labels = make([]Label, len(ids))
 	off := make([]int32, len(ids)+1)
 	adj := make([]int32, 0, len(ids)*8)
 	for i, id := range ids {
 		f.Addrs[i] = g.members[id].address
+		f.Labels[i] = Label{Service: g.members[id].service, Instance: g.members[id].instance}
 		start := len(adj)
 		links := g.members[id].links
 		for peer := range links {

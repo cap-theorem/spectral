@@ -5,9 +5,10 @@ import (
 )
 
 type RegistrationRequest struct {
-	Service  string `json:"service"`
-	Endpoint string `json:"endpoint"`
-	TTL      string `json:"ttl"`
+	Service    string `json:"service"`
+	InstanceID string `json:"instance_id,omitempty"`
+	Endpoint   string `json:"endpoint"`
+	TTL        string `json:"ttl"`
 }
 
 type RenewRequest struct {

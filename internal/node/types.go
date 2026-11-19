@@ -19,6 +19,7 @@ const (
 
 type Registration struct {
 	Service  string
+	Instance string
 	Endpoint string
 	TTL      time.Duration
 }
