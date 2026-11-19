@@ -1,0 +1,25 @@
+name: spectral-workstation
+
+services:
+  collector:
+    image: ghcr.io/cap-theorem/spectral-collector:${COLLECTOR_TAG:-sha-297689b}
+    pull_policy: always
+    command:
+      - --listen-addr=:9400
+      - --stale-after=1m
+      - --log-format=json
+    ports:
+      - "9400:9400"
+    restart: unless-stopped
+
+  visz:
+    build:
+      context: ${VISZ_DIR:-../../../visz}
+      args:
+        VITE_COLLECTOR_URL: http://localhost:9400
+    image: visz:local
+    ports:
+      - "9500:80"
+    depends_on:
+      - collector
+    restart: unless-stopped

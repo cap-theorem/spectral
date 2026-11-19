@@ -1,0 +1,340 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+here=$(cd "$(dirname "$0")" && pwd)
+namespace=foodbolt
+services=(gateway orders restaurants payments dispatch)
+
+export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/spectral-k3s.yaml}
+export FOODBOLT_RUN=${FOODBOLT_RUN:-demo-1}
+export SPCTRLD_TAG=${SPCTRLD_TAG:-sha-297689b}
+export FOODBOLT_TAG=${FOODBOLT_TAG:-sha-5be11a9}
+if [[ -z ${SPECTRAL_COLLECTOR_URL+x} ]]; then
+  ts_ip=$(tailscale ip -4 2>/dev/null | head -1) || true
+  [[ -n $ts_ip ]] || fail 'cannot find this machine'"'"'s Tailscale IP; set SPECTRAL_COLLECTOR_URL'
+  export SPECTRAL_COLLECTOR_URL="http://$ts_ip:9400"
+fi
+ssh_user=${DEMO_SSH_USER:-ubuntu}
+run_label="spectral.dev/run=$FOODBOLT_RUN"
+worker_label="$run_label,spectral.dev/role=worker"
+
+k() { command kubectl -n "$namespace" "$@"; }
+
+usage() {
+  cat <<EOF
+usage: scripts/demo COMMAND [ARGS]
+
+run $FOODBOLT_RUN  spctrld $SPCTRLD_TAG  foodbolt $FOODBOLT_TAG
+collector $SPECTRAL_COLLECTOR_URL
+
+look
+  status                        pods, their containers and machines, plus the collector summary
+  watch                         status, refreshed every 2s
+  machines                      cluster nodes and how many peers each runs
+  graph                         collector summary
+  logs POD [app|spctrld]        follow one container's logs (default app)
+
+spin up
+  up SERVICE [N] [MACHINE]      start N new peers of SERVICE (default 1)
+  up-random N [MACHINE]         start N peers of random services
+  up-all [N]                    start N peers of every service (default 1)
+
+kill (nothing ever comes back)
+  kill POD...                   delete pods gracefully: spctrld sends Leave
+  crash POD...                  delete pods instantly: no Leave
+  kill-random N [SERVICE]       gracefully delete N random workers
+  crash-random N [SERVICE]      instantly delete N random workers
+  kill-app POD [--hard]         stop only the service container; spctrld stays up
+  kill-spctrld POD [--hard]     stop only the sidecar; the service stays up
+  crash-machine MACHINE         instantly delete every peer on one machine
+
+traffic
+  order [N] [CUSTOMER]          place N orders (default 1) as alice, bob, carol or dave
+  gateway                       print the gateway URL
+
+  down                          delete every pod and service in the run
+
+POD accepts a unique prefix, e.g. orders-demo-1-kv. MACHINE is a node name from 'machines'.
+Override any default with FOODBOLT_RUN, SPCTRLD_TAG, FOODBOLT_TAG or SPECTRAL_COLLECTOR_URL.
+EOF
+}
+
+is_service() {
+  local s
+  for s in "${services[@]}"; do
+    [[ $s == "$1" ]] && return 0
+  done
+  return 1
+}
+
+resolve_pod() {
+  local want=$1 names match
+  names=$(k get pods -l "$run_label" -o 'jsonpath={range .items[*]}{.metadata.name}{"\n"}{end}')
+  if grep -qx -- "$want" <<<"$names"; then
+    printf '%s\n' "$want"
+    return
+  fi
+  match=$(grep -- "^$want" <<<"$names" || true)
+  [[ -n $match ]] || fail "no pod in run $FOODBOLT_RUN matches $want"
+  [[ $(wc -l <<<"$match") -eq 1 ]] || fail "$want matches several pods: $(tr '\n' ' ' <<<"$match")"
+  printf '%s\n' "$match"
+}
+
+live_workers() {
+  local selector=$worker_label
+  if [[ -n ${1:-} ]]; then
+    selector="$selector,app=$1"
+  fi
+  k get pods -l "$selector" --field-selector='status.phase=Running' \
+    -o 'jsonpath={range .items[*]}{.metadata.deletionTimestamp}{"\t"}{.metadata.name}{"\n"}{end}' |
+    awk -F'\t' '$1 == "" && $2 != "" { print $2 }'
+}
+
+pick_random() {
+  local n=$1
+  awk 'BEGIN { srand() } { print rand() "\t" $0 }' | sort | cut -f2 | head -n "$n"
+}
+
+check_count() {
+  [[ $1 =~ ^[1-9][0-9]*$ ]] || fail "N must be a positive number, got $1"
+}
+
+cmd_status() {
+  k get pods -l "$run_label" -o json | python3 -c '
+import json, sys
+from datetime import datetime, timezone
+
+def state(cs):
+    s = cs.get("state", {})
+    if "running" in s:
+        return "up" if cs.get("ready") else "starting"
+    if "terminated" in s:
+        t = s["terminated"]
+        return "dead(" + str(t.get("exitCode")) + ")"
+    if "waiting" in s:
+        return s["waiting"].get("reason", "waiting").lower()
+    return "?"
+
+now = datetime.now(timezone.utc)
+rows = []
+for p in json.load(sys.stdin)["items"]:
+    meta, spec, status = p["metadata"], p["spec"], p.get("status", {})
+    app = meta["labels"].get("app", "")
+    by_name = {c["name"]: c for c in status.get("containerStatuses", [])}
+    sidecar = state(by_name["spctrld"]) if "spctrld" in by_name else "-"
+    service = state(by_name[app]) if app in by_name else "-"
+    if meta.get("deletionTimestamp"):
+        sidecar = service = "leaving"
+    started = datetime.fromisoformat(meta["creationTimestamp"].replace("Z", "+00:00"))
+    age = int((now - started).total_seconds())
+    rows.append((app, meta["name"], spec.get("nodeName", "-"), service, sidecar, str(age // 60) + "m" + str(age % 60).zfill(2) + "s"))
+
+rows.sort()
+header = ("SERVICE", "POD", "MACHINE", "APP", "SPCTRLD", "AGE")
+widths = [max(len(r[i]) for r in rows + [header]) for i in range(len(header))]
+for r in [header] + rows:
+    print("  ".join(v.ljust(w) for v, w in zip(r, widths)))
+print()
+print(len(rows), "pods in run")
+'
+  cmd_graph || true
+}
+
+cmd_graph() {
+  curl -fsS -m 3 "$SPECTRAL_COLLECTOR_URL/v1/summary" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+print("collector: nodes={nodes} edges={edges} components={components} largest={largest_component} isolated={isolated} degree={degree_min}/{degree_mean:.1f}/{degree_max} gap={gap:.3f}".format(**d))
+' || printf 'collector: unreachable at %s\n' "$SPECTRAL_COLLECTOR_URL"
+}
+
+cmd_watch() {
+  while true; do
+    out=$(cmd_status 2>&1)
+    clear
+    printf '%s  run %s\n\n%s\n' "$(date +%T)" "$FOODBOLT_RUN" "$out"
+    sleep 2
+  done
+}
+
+cmd_machines() {
+  local nodes counts
+  nodes=$(command kubectl get nodes -o 'jsonpath={range .items[*]}{.metadata.name}{"\t"}{.status.addresses[?(@.type=="InternalIP")].address}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}')
+  counts=$(k get pods -l "$run_label" --field-selector='status.phase=Running' -o 'jsonpath={range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort | uniq -c)
+  printf '%-20s %-16s %-6s %s\n' MACHINE TAILSCALE_IP READY PEERS
+  while IFS=$'\t' read -r name ip ready; do
+    n=$(awk -v m="$name" '$2 == m { print $1 }' <<<"$counts")
+    printf '%-20s %-16s %-6s %s\n' "$name" "$ip" "$ready" "${n:-0}"
+  done <<<"$nodes"
+}
+
+cmd_logs() {
+  local pod container
+  pod=$(resolve_pod "${1:?usage: logs POD [app|spctrld]}")
+  container=$(k get pod "$pod" -o 'jsonpath={.metadata.labels.app}')
+  if [[ ${2:-app} == spctrld || $container == spctrld-seed ]]; then
+    container=spctrld
+  fi
+  k logs -f --tail=100 "$pod" -c "$container"
+}
+
+cmd_up() {
+  local svc=${1:?usage: up SERVICE [N] [MACHINE]} n=${2:-1} machine=${3:-}
+  is_service "$svc" || fail "unknown service $svc; pick one of: ${services[*]}"
+  check_count "$n"
+  "$here/foodbolt-pods" "$svc" "$n" $machine
+}
+
+cmd_up_random() {
+  local n=${1:?usage: up-random N [MACHINE]} machine=${2:-} svc i
+  check_count "$n"
+  local -a picks=()
+  for ((i = 0; i < n; i++)); do
+    picks+=("${services[RANDOM % ${#services[@]}]}")
+  done
+  for svc in "${services[@]}"; do
+    local count=0 p
+    for p in "${picks[@]}"; do
+      [[ $p == "$svc" ]] && count=$((count + 1))
+    done
+    if ((count > 0)); then
+      "$here/foodbolt-pods" "$svc" "$count" $machine
+    fi
+  done
+}
+
+cmd_up_all() {
+  local n=${1:-1} svc
+  check_count "$n"
+  for svc in "${services[@]}"; do
+    "$here/foodbolt-pods" "$svc" "$n"
+  done
+}
+
+delete_pods() {
+  local mode=$1
+  shift
+  (($# > 0)) || fail "name at least one pod"
+  local -a pods=()
+  local p
+  for p in "$@"; do
+    pods+=("$(resolve_pod "$p")")
+  done
+  if [[ $mode == crash ]]; then
+    k delete pod "${pods[@]}" --grace-period=0 --force --wait=false 2>&1 | grep -v '^Warning: Immediate deletion'
+  else
+    k delete pod "${pods[@]}" --wait=false
+  fi
+}
+
+cmd_random() {
+  local mode=$1 n=${2:?usage: $1-random N [SERVICE]} svc=${3:-} victims
+  check_count "$n"
+  if [[ -n $svc ]]; then
+    is_service "$svc" || fail "unknown service $svc"
+  fi
+  victims=$(live_workers "$svc" | pick_random "$n")
+  [[ -n $victims ]] || fail "no live ${svc:-worker} pods to kill"
+  if (($(wc -l <<<"$victims") < n)); then
+    printf 'only %s live %s pods; killing all of them\n' "$(wc -l <<<"$victims" | tr -d ' ')" "${svc:-worker}" >&2
+  fi
+  delete_pods "$mode" $victims
+}
+
+stop_container() {
+  local which=$1 pod=$2 hard=${3:-} container cid host timeout=10
+  pod=$(resolve_pod "$pod")
+  if [[ $which == app ]]; then
+    container=$(k get pod "$pod" -o 'jsonpath={.metadata.labels.app}')
+    [[ $container != spctrld-seed ]] || fail "$pod is the seed and has only spctrld; use kill-spctrld"
+  else
+    container=spctrld
+  fi
+  if [[ -n $hard ]]; then
+    [[ $hard == --hard ]] || fail "unknown flag $hard"
+    timeout=0
+  fi
+  cid=$(k get pod "$pod" -o "jsonpath={.status.containerStatuses[?(@.name==\"$container\")].containerID}")
+  cid=${cid#containerd://}
+  [[ -n $cid ]] || fail "$container in $pod has no running container"
+  host=$(k get pod "$pod" -o 'jsonpath={.status.hostIP}')
+  ssh -o BatchMode=yes -o ConnectTimeout=5 "$ssh_user@$host" sudo -n k3s crictl stop -t "$timeout" "$cid" >/dev/null
+  printf 'stopped %s in %s on %s (%s)\n' "$container" "$pod" "$host" "$([[ $timeout == 0 ]] && echo SIGKILL || echo SIGTERM)"
+}
+
+cmd_crash_machine() {
+  local machine=${1:?usage: crash-machine MACHINE} pods
+  command kubectl get node "$machine" >/dev/null 2>&1 || fail "no machine named $machine; see scripts/demo machines"
+  pods=$(k get pods -l "$run_label" --field-selector="spec.nodeName=$machine,status.phase=Running" -o 'jsonpath={range .items[*]}{.metadata.name}{"\n"}{end}')
+  [[ -n $pods ]] || fail "no live peers on $machine"
+  printf 'crashing %s peers on %s\n' "$(wc -l <<<"$pods" | tr -d ' ')" "$machine"
+  delete_pods crash $pods
+}
+
+gateway_url() {
+  local port ip
+  port=$(k get service "gateway-$FOODBOLT_RUN" -o 'jsonpath={.spec.ports[0].nodePort}' 2>/dev/null) || true
+  [[ -n $port ]] || fail "run $FOODBOLT_RUN has no gateway; start one with: scripts/demo up gateway"
+  ip=$(command kubectl get nodes -o 'jsonpath={.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+  printf 'http://%s:%s\n' "$ip" "$port"
+}
+
+cmd_order() {
+  local n=${1:-1} who=${2:-} url i customer
+  check_count "$n"
+  local -a customers=(alice bob carol)
+  url=$(gateway_url)
+  for ((i = 0; i < n; i++)); do
+    customer=${who:-${customers[RANDOM % ${#customers[@]}]}}
+    curl -sS -m 15 -X POST "$url/v1/orders" \
+      -H "Authorization: Bearer fb_test_$customer" \
+      -H 'Content-Type: application/json' \
+      -d '{"restaurant_id":"green-bowl","items":[{"item_id":"harvest-bowl","quantity":1}]}' |
+      CUSTOMER=$customer python3 -c '
+import json, os, sys
+raw = sys.stdin.read()
+try:
+    d = json.loads(raw)
+except ValueError:
+    print(os.environ["CUSTOMER"].ljust(6), "bad response:", raw[:200])
+    sys.exit(0)
+if "error" in d:
+    e = d["error"]
+    print(os.environ["CUSTOMER"].ljust(6), "FAILED", e.get("message", e) if isinstance(e, dict) else e)
+    sys.exit(0)
+hops = " -> ".join(h["service"] + "/" + h["instance"] + "@" + h["machine"] for h in d.get("trace", []))
+print(os.environ["CUSTOMER"].ljust(6), d.get("status", "?").ljust(10), d.get("order_id") or d.get("id") or "", hops)
+'
+  done
+}
+
+cmd_down() {
+  k delete pods,services -l "$run_label" --wait=false
+}
+
+command=${1:-help}
+shift || true
+case $command in
+  status|ls)      cmd_status ;;
+  watch)          cmd_watch ;;
+  machines)       cmd_machines ;;
+  graph)          cmd_graph ;;
+  logs)           cmd_logs "$@" ;;
+  up)             cmd_up "$@" ;;
+  up-random)      cmd_up_random "$@" ;;
+  up-all)         cmd_up_all "$@" ;;
+  kill)           delete_pods kill "$@" ;;
+  crash)          delete_pods crash "$@" ;;
+  kill-random)    cmd_random kill "$@" ;;
+  crash-random)   cmd_random crash "$@" ;;
+  kill-app)       stop_container app "$@" ;;
+  kill-spctrld)   stop_container spctrld "$@" ;;
+  crash-machine)  cmd_crash_machine "$@" ;;
+  order)          cmd_order "$@" ;;
+  gateway)        gateway_url ;;
+  down)           cmd_down ;;
+  help|-h|--help) usage ;;
+  *)              usage >&2; exit 1 ;;
+esac
