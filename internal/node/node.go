@@ -43,6 +43,10 @@ type Node struct {
 	lastReport []collector.ReportLink
 	nextReport time.Time
 	keepalive  time.Time
+
+	flowOut   chan collector.FlowReport
+	flows     map[flowKey]uint32
+	nextFlows time.Time
 }
 
 type NodeMetrics struct {
@@ -62,6 +66,7 @@ type NodeConfig struct {
 	Overlay    OverlayKind
 	Metrics    NodeMetrics
 	Telemetry  chan collector.Report
+	Flows      chan collector.FlowReport
 }
 
 func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node {
@@ -83,6 +88,8 @@ func NewNode(cfg NodeConfig, tr transport.Transport, logger *slog.Logger) *Node 
 		metrics:     cfg.Metrics,
 		pendingPing: make(map[uint64]pendingPing),
 		telemetry:   cfg.Telemetry,
+		flowOut:     cfg.Flows,
+		flows:       make(map[flowKey]uint32),
 	}
 	n.reg.merge(wire.Record{Peer: self, Status: wire.StatusAlive}, time.Now())
 
@@ -205,6 +212,7 @@ func (n *Node) tick(now time.Time) {
 	n.expireLease(now)
 	n.expirePings(now)
 	n.reportTick(now)
+	n.flowTick(now)
 }
 
 func (n *Node) handleRequest(req request) {
@@ -293,6 +301,7 @@ func (n *Node) handleEnvelope(env wire.Envelope) {
 }
 
 func (n *Node) send(to wire.Peer, msg wire.Message) {
+	n.countFlow(to.ID, msg.Kind())
 	n.transport.Send(to.Address, wire.Envelope{
 		From: n.self,
 		To:   to.ID,

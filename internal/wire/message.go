@@ -120,3 +120,34 @@ type PingReqAck struct {
 }
 
 func (PingReqAck) Kind() Kind { return KindPingReqAck }
+
+func (k Kind) String() string {
+	switch k {
+	case KindHeartbeat:
+		return "heartbeat"
+	case KindLink:
+		return "link"
+	case KindLinkAck:
+		return "link_ack"
+	case KindUnlink:
+		return "unlink"
+	case KindUpdate:
+		return "update"
+	case KindAEDigest:
+		return "ae_digest"
+	case KindAEHeads:
+		return "ae_heads"
+	case KindAEWant:
+		return "ae_want"
+	case KindPing:
+		return "ping"
+	case KindPong:
+		return "pong"
+	case KindPingReq:
+		return "ping_req"
+	case KindPingReqAck:
+		return "ping_req_ack"
+	default:
+		return "unknown"
+	}
+}
