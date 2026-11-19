@@ -1,0 +1,18 @@
+all:
+  vars:
+    ansible_user: ubuntu
+    ansible_become: true
+  children:
+    k3s_server:
+      hosts:
+        spectral-h1divp-1:
+          ansible_host: 100.90.92.118
+          k3s_node_ip: 100.90.92.118
+    k3s_agents:
+      hosts:
+        spectral-h1divp-2:
+          ansible_host: 100.65.82.89
+          k3s_node_ip: 100.65.82.89
+        spectral-h1divp-3:
+          ansible_host: 100.114.90.93
+          k3s_node_ip: 100.114.90.93

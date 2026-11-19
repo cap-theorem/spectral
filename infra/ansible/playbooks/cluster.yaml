@@ -1,0 +1,184 @@
+---
+- name: Configure the K3s server
+  hosts: k3s_server
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Require exactly one K3s server
+      ansible.builtin.assert:
+        that:
+          - groups['k3s_server'] | length == 1
+        fail_msg: This playbook expects exactly one K3s server.
+      run_once: true
+
+    - name: Check that the configured address belongs to tailscale0
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -4
+          - -o
+          - addr
+          - show
+          - dev
+          - tailscale0
+      register: tailscale_address
+      changed_when: false
+
+    - name: Validate the configured Tailscale address
+      ansible.builtin.assert:
+        that:
+          - k3s_node_ip in tailscale_address.stdout
+        fail_msg: "{{ k3s_node_ip }} is not assigned to tailscale0 on {{ inventory_hostname }}."
+
+    - name: Install K3s prerequisites
+      ansible.builtin.apt:
+        name: curl
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the K3s configuration directory
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configure the K3s server to use Tailscale networking
+      ansible.builtin.template:
+        src: ../templates/server-config.yaml.j2
+        dest: /etc/rancher/k3s/config.yaml
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart K3s server
+
+    - name: Check whether K3s is installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Install K3s server
+      ansible.builtin.shell: |
+        set -o pipefail
+        if [ -n "$K3S_VERSION" ]; then
+          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$K3S_VERSION" sh -
+        else
+          curl -sfL https://get.k3s.io | INSTALL_K3S_CHANNEL=stable sh -
+        fi
+      args:
+        executable: /bin/bash
+      environment:
+        K3S_VERSION: "{{ k3s_version | default('') }}"
+      when: not k3s_binary.stat.exists
+
+    - name: Ensure the K3s server is enabled and running
+      ansible.builtin.systemd:
+        name: k3s
+        enabled: true
+        state: started
+
+    - name: Wait for the Kubernetes API
+      ansible.builtin.wait_for:
+        host: "{{ k3s_node_ip }}"
+        port: 6443
+        timeout: 180
+
+    - name: Read the K3s agent join token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_node_token
+      no_log: true
+
+  handlers:
+    - name: Restart K3s server
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+
+- name: Configure K3s agents
+  hosts: k3s_agents
+  become: true
+  gather_facts: true
+  vars:
+    k3s_server_host: "{{ groups['k3s_server'][0] }}"
+    k3s_server_url: "https://{{ hostvars[k3s_server_host].k3s_node_ip }}:6443"
+    k3s_join_token: "{{ hostvars[k3s_server_host].k3s_node_token.content | b64decode | trim }}"
+  tasks:
+    - name: Check that the configured address belongs to tailscale0
+      ansible.builtin.command:
+        argv:
+          - ip
+          - -4
+          - -o
+          - addr
+          - show
+          - dev
+          - tailscale0
+      register: tailscale_address
+      changed_when: false
+
+    - name: Validate the configured Tailscale address
+      ansible.builtin.assert:
+        that:
+          - k3s_node_ip in tailscale_address.stdout
+        fail_msg: "{{ k3s_node_ip }} is not assigned to tailscale0 on {{ inventory_hostname }}."
+
+    - name: Install K3s prerequisites
+      ansible.builtin.apt:
+        name: curl
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the K3s configuration directory
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configure the K3s agent to use Tailscale networking
+      ansible.builtin.template:
+        src: ../templates/agent-config.yaml.j2
+        dest: /etc/rancher/k3s/config.yaml
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart K3s agent
+      no_log: true
+
+    - name: Check whether K3s is installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Install K3s agent
+      ansible.builtin.shell: |
+        set -o pipefail
+        if [ -n "$K3S_VERSION" ]; then
+          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$K3S_VERSION" sh -
+        else
+          curl -sfL https://get.k3s.io | INSTALL_K3S_CHANNEL=stable sh -
+        fi
+      args:
+        executable: /bin/bash
+      environment:
+        K3S_VERSION: "{{ k3s_version | default('') }}"
+        INSTALL_K3S_EXEC: agent
+      when: not k3s_binary.stat.exists
+      no_log: true
+
+    - name: Ensure the K3s agent is enabled and running
+      ansible.builtin.systemd:
+        name: k3s-agent
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Restart K3s agent
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: restarted

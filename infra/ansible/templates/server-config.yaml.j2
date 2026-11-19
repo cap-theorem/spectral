@@ -1,0 +1,4 @@
+node-ip: {{ k3s_node_ip | to_json }}
+tls-san:
+  - {{ k3s_node_ip | to_json }}
+flannel-iface: tailscale0
