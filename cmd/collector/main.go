@@ -61,6 +61,12 @@ func run(cfg config.CollectorCLIConfig, logger *slog.Logger) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(server.Serve)
 	g.Go(func() error {
+		if err := server.RunFlows(gctx); !errors.Is(err, context.Canceled) {
+			return err
+		}
+		return nil
+	})
+	g.Go(func() error {
 		if err := analyzer.Run(gctx); !errors.Is(err, context.Canceled) {
 			return err
 		}

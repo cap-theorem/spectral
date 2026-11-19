@@ -74,8 +74,10 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 	nodeCtx, stopNode := context.WithCancel(context.Background())
 
 	var reports chan collector.Report
+	var flows chan collector.FlowReport
 	if cfg.CollectorURL != "" {
 		reports = make(chan collector.Report, 1)
+		flows = make(chan collector.FlowReport, 4)
 	}
 
 	node := node.NewNode(
@@ -87,6 +89,7 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 				PongsReceived: pongsReceived,
 			},
 			Telemetry: reports,
+			Flows:     flows,
 		},
 		tr,
 		logger.With("component", "node"),
@@ -114,6 +117,14 @@ func Run(cfg config.DaemonCLIConfig, logger *slog.Logger) error {
 		)
 		g.Go(supervise("telemetry", stopping, func() error {
 			return exporter.Run(stopping)
+		}))
+		flowExporter := telemetry.NewFlowExporter(
+			telemetry.ExporterConfig{CollectorURL: cfg.CollectorURL},
+			flows,
+			logger.With("component", "flows"),
+		)
+		g.Go(supervise("flows", stopping, func() error {
+			return flowExporter.Run(stopping)
 		}))
 	}
 

@@ -28,10 +28,11 @@ type Server struct {
 	logger   *slog.Logger
 	server   *http.Server
 	streams  context.Context
+	flows    *flowHub
 }
 
 func NewServer(cfg ServerConfig, g *Graph, a *Analyzer, m Metrics, logger *slog.Logger) *Server {
-	s := &Server{graph: g, analyzer: a, metrics: m, logger: logger}
+	s := &Server{graph: g, analyzer: a, metrics: m, logger: logger, flows: newFlowHub()}
 
 	// No request logging: ingest is most of the traffic.
 	r := chi.NewRouter()
@@ -40,6 +41,7 @@ func NewServer(cfg ServerConfig, g *Graph, a *Analyzer, m Metrics, logger *slog.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Timeout(5 * time.Second))
 		r.Post(ReportPath, s.handleReport)
+		r.Post(FlowsPath, s.handleFlows)
 		r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	})
 	// Read-only, so any origin may read it (e.g. a frontend dev server).
@@ -48,6 +50,7 @@ func NewServer(cfg ServerConfig, g *Graph, a *Analyzer, m Metrics, logger *slog.
 		r.With(middleware.Timeout(5*time.Second)).Get("/v1/summary", s.handleSummary)
 		r.With(middleware.Timeout(5*time.Second), middleware.Compress(5, "application/json")).Get("/v1/graph", s.handleGraph)
 		r.Get("/v1/graph/stream", s.handleStream)
+		r.Get("/v1/flows/stream", s.handleFlowStream)
 	})
 
 	s.server = &http.Server{
@@ -76,6 +79,8 @@ func (s *Server) Serve() error {
 	return err
 }
 
+func (s *Server) RunFlows(ctx context.Context) error { return s.flows.run(ctx, FlowFlushInterval) }
+
 func (s *Server) Shutdown(ctx context.Context) error { return s.server.Shutdown(ctx) }
 
 func (s *Server) Close() error { return s.server.Close() }
@@ -100,6 +105,53 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		s.count(r.Context(), s.metrics.ReportsStale)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleFlows(w http.ResponseWriter, r *http.Request) {
+	var rep FlowReport
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxReportBytes)).Decode(&rep); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := rep.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.flows.add(rep)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleFlowStream(w http.ResponseWriter, r *http.Request) {
+	batches, cancel := s.flows.subscribe()
+	defer cancel()
+
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	if _, err := fmt.Fprint(w, ": flows\n\n"); err != nil || rc.Flush() != nil {
+		return
+	}
+
+	ping := time.NewTicker(15 * time.Second)
+	defer ping.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-s.streams.Done():
+			return
+		case b := <-batches:
+			if _, err := fmt.Fprintf(w, "event: flows\ndata: %s\n\n", b); err != nil || rc.Flush() != nil {
+				return
+			}
+		case <-ping.C:
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil || rc.Flush() != nil {
+				return
+			}
+		}
+	}
 }
 
 func (s *Server) handleSummary(w http.ResponseWriter, _ *http.Request) {
