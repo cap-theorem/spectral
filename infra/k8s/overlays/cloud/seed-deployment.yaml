@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spctrld-seed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spctrld-seed
+  template:
+    metadata:
+      labels:
+        app: spctrld-seed
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: spctrld
+          image: spctrld:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: quic
+              containerPort: 7000
+              protocol: UDP
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: LOG_FORMAT
+              value: json
+            - name: OTEL_SERVICE_NAME
+              value: spctrld
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "5000"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          args:
+            - "--listen-addr=$(POD_IP):7000"
+            - "--api-port=8000"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
