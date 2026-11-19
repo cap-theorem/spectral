@@ -189,7 +189,7 @@ $node_selector
       args:
         - "--listen-addr=\$(POD_IP):7000"
         - "--api-port=8000"
-        - "--bootstrap=$peers_name.$namespace.svc.cluster.local:7000"
+        - "--bootstrap=$peers_name.$namespace.svc.cluster.local.:7000"
 $collector_arg
       resources:
         requests:
