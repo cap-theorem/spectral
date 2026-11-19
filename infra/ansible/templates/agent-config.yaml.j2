@@ -1,0 +1,4 @@
+server: {{ k3s_server_url | to_json }}
+token: {{ k3s_join_token | to_json }}
+node-ip: {{ k3s_node_ip | to_json }}
+flannel-iface: tailscale0
