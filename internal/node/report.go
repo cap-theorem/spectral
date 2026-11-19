@@ -27,14 +27,22 @@ func (n *Node) reportTick(now time.Time) {
 	}
 	slices.SortFunc(links, func(a, b collector.ReportLink) int { return a.Peer.Compare(b.Peer) })
 
-	if n.lastReport != nil && slices.Equal(links, n.lastReport) && now.Before(n.keepalive) {
+	service, instance := "", ""
+	if n.lease != nil {
+		service, instance = n.reg.records[n.self.ID].Record.Service.Name, n.instance
+	}
+
+	unchanged := n.lastReport != nil && slices.Equal(links, n.lastReport) && service == n.lastService && instance == n.lastInstance
+	if unchanged && now.Before(n.keepalive) {
 		return
 	}
 	n.lastReport = links
+	n.lastService = service
+	n.lastInstance = instance
 	// ±10%, so nodes started together do not send in sync.
 	n.keepalive = now.Add(time.Duration(float64(reportKeepalive) * (0.9 + 0.2*rand.Float64())))
 
-	report := collector.Report{ID: n.self.ID, Address: n.self.Address, Links: links}
+	report := collector.Report{ID: n.self.ID, Address: n.self.Address, Service: service, Instance: instance, Links: links}
 	select {
 	case n.telemetry <- report:
 	default:

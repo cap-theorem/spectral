@@ -27,7 +27,8 @@ type Node struct {
 	self  wire.Peer
 	state State
 
-	lease *Lease
+	lease    *Lease
+	instance string
 
 	reg registry
 	ov  overlay
@@ -39,10 +40,12 @@ type Node struct {
 	metrics     NodeMetrics
 	pendingPing map[uint64]pendingPing
 
-	telemetry  chan collector.Report
-	lastReport []collector.ReportLink
-	nextReport time.Time
-	keepalive  time.Time
+	telemetry    chan collector.Report
+	lastReport   []collector.ReportLink
+	lastService  string
+	lastInstance string
+	nextReport   time.Time
+	keepalive    time.Time
 
 	flowOut   chan collector.FlowReport
 	flows     map[flowKey]uint32
@@ -333,6 +336,7 @@ func (n *Node) registerService(reg Registration) (Lease, error) {
 
 	n.apply(own, n.self.ID, now)
 
+	n.instance = reg.Instance
 	n.lease = &Lease{
 		Token:     token,
 		ExpiresAt: now.Add(reg.TTL),
@@ -442,4 +446,5 @@ func (n *Node) expireLease(now time.Time) {
 	own.Inc++
 	n.apply(own, n.self.ID, now)
 	n.lease = nil
+	n.instance = ""
 }

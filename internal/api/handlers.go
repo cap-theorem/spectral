@@ -26,6 +26,7 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	lease, err := a.node.Register(r.Context(), node.Registration{
 		Service:  reg.Service,
+		Instance: reg.InstanceID,
 		Endpoint: reg.Endpoint,
 		TTL:      ttl,
 	})

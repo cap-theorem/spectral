@@ -75,3 +75,36 @@ func TestReportTickOffWithoutChannel(t *testing.T) {
 		t.Fatal("reported with telemetry off")
 	}
 }
+
+func TestReportCarriesServiceLabel(t *testing.T) {
+	n := testNode()
+	n.telemetry = make(chan collector.Report, 1)
+	t0 := time.Unix(100, 0)
+
+	n.reportTick(t0)
+	if r := <-n.telemetry; r.Service != "" || r.Instance != "" {
+		t.Fatalf("labelled before registering: %+v", r)
+	}
+
+	reg := testRegistration()
+	reg.Instance = "ord-9869"
+	if _, err := n.registerService(reg); err != nil {
+		t.Fatal(err)
+	}
+	n.reportTick(t0.Add(reportInterval))
+	r := <-n.telemetry
+	if r.Service != reg.Service || r.Instance != "ord-9869" {
+		t.Fatalf("after register: %+v", r)
+	}
+
+	n.reportTick(t0.Add(2 * reportInterval))
+	if len(n.telemetry) != 0 {
+		t.Fatal("unchanged label reported again before keepalive")
+	}
+
+	n.expireLease(n.lease.ExpiresAt)
+	n.reportTick(t0.Add(3 * reportInterval))
+	if r := <-n.telemetry; r.Service != "" || r.Instance != "" {
+		t.Fatalf("after lease expired: %+v", r)
+	}
+}

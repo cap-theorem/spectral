@@ -16,9 +16,16 @@ const (
 	StateOrphaned NodeState = "orphaned" // presumed dead; kept until its reports expire
 )
 
+type Label struct {
+	Service  string
+	Instance string
+}
+
 type Node struct {
 	ID        wire.NodeID    `json:"id"`
 	Address   netip.AddrPort `json:"address"`
+	Service   string         `json:"service,omitempty"`
+	Instance  string         `json:"instance,omitempty"`
 	State     NodeState      `json:"state"`
 	Component int            `json:"component"` // 0 is the largest; -1 if orphaned
 }
@@ -69,7 +76,7 @@ func newView(f Frozen, labels []int32, gap float64, converged bool) view {
 		if g.degree(i) == 0 {
 			state = StateIsolated
 		}
-		s.Nodes = append(s.Nodes, Node{ID: id, Address: f.Addrs[i], State: state, Component: int(labels[i])})
+		s.Nodes = append(s.Nodes, Node{ID: id, Address: f.Addrs[i], Service: f.Labels[i].Service, Instance: f.Labels[i].Instance, State: state, Component: int(labels[i])})
 		for _, j := range g.neighbours(i) {
 			if int(j) > i {
 				s.Edges = append(s.Edges, [2]int32{int32(i), j})

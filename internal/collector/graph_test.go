@@ -3,6 +3,7 @@ package collector
 import (
 	"log/slog"
 	"math/rand/v2"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -252,4 +253,49 @@ func isolated(f Frozen) int {
 		}
 	}
 	return n
+}
+
+func TestGraphCarriesLabels(t *testing.T) {
+	g := NewGraph()
+	now := time.Unix(100, 0)
+	x, y, z := uuid.NewV4(), uuid.NewV4(), uuid.NewV4()
+
+	rx := report(x, 1, y)
+	rx.Service, rx.Instance = "orders", "ord-9869"
+	g.Apply(rx, now)
+	g.Apply(report(y, 1, x), now)
+	rz := report(z, 1, y)
+	rz.Service = "payments"
+	g.Apply(rz, now)
+
+	epoch := g.Epoch()
+	rx.Seq, rx.Instance = 2, "ord-0001"
+	g.Apply(rx, now)
+	if g.Epoch() == epoch {
+		t.Fatal("relabel did not bump the epoch")
+	}
+
+	f := g.Freeze(now)
+	got := map[wire.NodeID]Label{}
+	for i, id := range f.IDs {
+		got[id] = f.Labels[i]
+	}
+	if got[x] != (Label{Service: "orders", Instance: "ord-0001"}) || got[y] != (Label{}) {
+		t.Fatalf("labels = %+v", got)
+	}
+
+	v := newView(f, make([]int32, len(f.IDs)), 0, true)
+	for _, n := range v.snapshot.Nodes {
+		if n.ID == x && (n.Service != "orders" || n.Instance != "ord-0001") {
+			t.Fatalf("snapshot node = %+v", n)
+		}
+	}
+}
+
+func TestReportRejectsLongLabels(t *testing.T) {
+	r := report(uuid.NewV4(), 1)
+	r.Service = strings.Repeat("s", maxLabelBytes+1)
+	if r.Validate() == nil {
+		t.Fatal("accepted an oversized service name")
+	}
 }
