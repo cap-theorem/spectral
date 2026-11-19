@@ -31,26 +31,30 @@ for tag in "$SPCTRLD_TAG" "$FOODBOLT_TAG"; do
 done
 [[ -z $host || $host =~ ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ ]] || fail 'host must be a kubernetes.io/hostname label value'
 
+: "${SPECTRAL_COLLECTOR_URL?set SPECTRAL_COLLECTOR_URL to your collector, e.g. http://<your Tailscale IP>:9400, or to an empty string to disable reports}"
+collector_url=$SPECTRAL_COLLECTOR_URL
 collector_arg=''
-if [[ -n ${SPECTRAL_COLLECTOR_URL:-} ]]; then
-  [[ $SPECTRAL_COLLECTOR_URL =~ ^https?://[a-zA-Z0-9._:/-]+$ ]] || fail 'invalid SPECTRAL_COLLECTOR_URL'
-  collector_arg="        - \"--collector-url=$SPECTRAL_COLLECTOR_URL\""
+if [[ -n $collector_url ]]; then
+  [[ $collector_url =~ ^https?://[a-zA-Z0-9._:/-]+$ ]] || fail 'invalid SPECTRAL_COLLECTOR_URL'
+  collector_arg="        - \"--collector-url=$collector_url\""
 fi
 
 namespace=foodbolt
 seed_name="spctrld-seed-$FOODBOLT_RUN"
+peers_name="spctrld-peers-$FOODBOLT_RUN"
+gateway_name="gateway-$FOODBOLT_RUN"
 selector="spectral.dev/run=$FOODBOLT_RUN"
 node_selector=''
 if [[ -n $host ]]; then
   node_selector=$'  nodeSelector:\n    kubernetes.io/hostname: "'"$host"'"'
 fi
 
-render_seed_service() {
+render_peers_service() {
   cat <<EOF
 apiVersion: v1
 kind: Service
 metadata:
-  name: $seed_name
+  name: $peers_name
   namespace: $namespace
   labels:
     spectral.dev/run: "$FOODBOLT_RUN"
@@ -59,12 +63,33 @@ spec:
   publishNotReadyAddresses: true
   selector:
     spectral.dev/run: "$FOODBOLT_RUN"
-    spectral.dev/role: seed
+    spectral.dev/peer: "true"
   ports:
     - name: quic
       port: 7000
       targetPort: quic
       protocol: UDP
+EOF
+}
+
+render_gateway_service() {
+  cat <<EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: $gateway_name
+  namespace: $namespace
+  labels:
+    spectral.dev/run: "$FOODBOLT_RUN"
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+    spectral.dev/run: "$FOODBOLT_RUN"
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
 EOF
 }
 
@@ -79,6 +104,7 @@ metadata:
     app: spctrld-seed
     spectral.dev/run: "$FOODBOLT_RUN"
     spectral.dev/role: seed
+    spectral.dev/peer: "true"
 spec:
   restartPolicy: Never
   containers:
@@ -89,7 +115,7 @@ spec:
         - name: quic
           containerPort: 7000
           protocol: UDP
-        - name: http
+        - name: spctrld-api
           containerPort: 8000
       env:
         - name: POD_IP
@@ -98,6 +124,8 @@ spec:
               fieldPath: status.podIP
         - name: LOG_FORMAT
           value: json
+        - name: OTEL_SERVICE_NAME
+          value: spctrld
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.observability.svc.cluster.local:4317
       args:
@@ -145,7 +173,7 @@ $node_selector
         - name: quic
           containerPort: 7000
           protocol: UDP
-        - name: http
+        - name: spctrld-api
           containerPort: 8000
       env:
         - name: POD_IP
@@ -154,12 +182,14 @@ $node_selector
               fieldPath: status.podIP
         - name: LOG_FORMAT
           value: json
+        - name: OTEL_SERVICE_NAME
+          value: spctrld
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: http://otel-collector.observability.svc.cluster.local:4317
       args:
         - "--listen-addr=\$(POD_IP):7000"
         - "--api-port=8000"
-        - "--bootstrap=$seed_name.$namespace.svc.cluster.local:7000"
+        - "--bootstrap=$peers_name.$namespace.svc.cluster.local:7000"
 $collector_arg
       resources:
         requests:
@@ -194,9 +224,13 @@ EOF
 
 # Render without contacting the cluster: useful for checking a batch before creation.
 if [[ ${DRY_RUN:-0} == 1 ]]; then
-  render_seed_service
-  printf '\n---\n'
+  render_peers_service
+  printf -- '---\n'
   render_seed
+  if [[ $svc == gateway ]]; then
+    printf -- '---\n'
+    render_gateway_service
+  fi
   render_workers
   exit 0
 fi
@@ -224,17 +258,25 @@ foodbolt_namespace=$(k get namespace "$namespace" -o name --ignore-not-found) ||
 if [[ -z $foodbolt_namespace ]]; then
   k create namespace "$namespace"
 fi
-render_seed_service | k apply -f -
-seed_pod=$(k -n "$namespace" get pod "$seed_name" -o name --ignore-not-found) || fail 'cannot check the seed Pod'
-if [[ -n $seed_pod ]]; then
-  current_image=$(k -n "$namespace" get pod "$seed_name" -o 'jsonpath={.spec.containers[0].image}')
-  [[ $current_image == "ghcr.io/cap-theorem/spctrld:$SPCTRLD_TAG" ]] || fail "existing seed $seed_name uses image $current_image"
-else
+render_peers_service | k apply -f -
+
+live_peers=$(k -n "$namespace" get pods -l "$selector,spectral.dev/peer=true" --field-selector='status.phase!=Failed,status.phase!=Succeeded' -o name) || fail 'cannot check live peers'
+if [[ -z $live_peers ]]; then
+  [[ -z $(k -n "$namespace" get pod "$seed_name" -o name --ignore-not-found) ]] || fail "run $FOODBOLT_RUN has no live peers but $seed_name still exists; clean up the run or pick a new FOODBOLT_RUN"
   render_seed | k create -f -
+  k -n "$namespace" wait --for=condition=Ready "pod/$seed_name" --timeout=180s || fail "seed $seed_name is not Ready; inspect its pod events"
+  printf 'Started seed %s for run %s.\n' "$seed_name" "$FOODBOLT_RUN"
 fi
 
-k -n "$namespace" wait --for=condition=Ready "pod/$seed_name" --timeout=180s || fail "seed $seed_name is not Ready; inspect its pod events"
+if [[ $svc == gateway ]]; then
+  render_gateway_service | k apply -f -
+fi
+
 render_workers | k create -f -
-printf 'Created %s %s pod(s) in run %s (plus the seed).\n' "$count" "$svc" "$FOODBOLT_RUN"
+printf 'Created %s %s pod(s) in run %s.\n' "$count" "$svc" "$FOODBOLT_RUN"
+if [[ $svc == gateway ]]; then
+  node_port=$(k -n "$namespace" get service "$gateway_name" -o 'jsonpath={.spec.ports[0].nodePort}')
+  printf 'Gateway: http://<any node Tailscale IP>:%s (e.g. http://100.90.92.118:%s)\n' "$node_port" "$node_port"
+fi
 printf 'Inspect: kubectl -n %s get pods -l %s -o wide\n' "$namespace" "$selector"
 printf 'Clean up: kubectl -n %s delete pods,services -l %s\n' "$namespace" "$selector"
