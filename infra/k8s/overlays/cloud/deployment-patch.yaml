@@ -4,7 +4,7 @@ metadata:
   name: spctrld
   namespace: spectral
 spec:
-  replicas: 19
+  replicas: 20
   template:
     spec:
       topologySpreadConstraints:
@@ -17,10 +17,6 @@ spec:
       containers:
         - name: spctrld
           imagePullPolicy: IfNotPresent
-          args:
-            - "--listen-addr=$(POD_IP):7000"
-            - "--api-port=8000"
-            - "--bootstrap=spctrld-seed.spectral.svc.cluster.local:7000"
           resources:
             requests:
               cpu: 50m

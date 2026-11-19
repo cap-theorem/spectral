@@ -1,8 +1,6 @@
 # Spectral cloud deployment
 
-This overlay deploys one Spectral seed and 19 regular Spectral replicas to the K3s cluster. Regular pods bootstrap through the headless `spctrld-seed` Service (UDP 7000); the seed starts without a bootstrap address. The seed is a peer, not a central relay. Kubernetes can schedule it on any eligible node, and its one-replica Deployment replaces it if it fails. The existing `spctrld-peers` Service still selects regular pods, but is not used for bootstrap in this overlay.
-
-The local kind manifests under `infra/k8s/spectral` are unchanged. The overlay spreads regular pods across available nodes when possible and pulls both workloads from GHCR.
+This overlay deploys 20 Spectral replicas to the K3s cluster. The local kind manifests under `infra/k8s/spectral` are unchanged. The overlay spreads pods across available nodes when possible and pulls the daemon image from GHCR.
 
 ## Publish a commit image
 
@@ -32,9 +30,8 @@ Ensure your kubeconfig points to the K3s cluster, not kind, and check the contex
 ```sh
 kubectl config current-context
 kubectl apply -k infra/k8s/overlays/cloud
-kubectl -n spectral rollout status deployment/spctrld-seed --timeout=300s
 kubectl -n spectral rollout status deployment/spctrld --timeout=300s
-kubectl -n spectral get deployments,pods -o wide
+kubectl -n spectral get pods -o wide
 ```
 
 Apply `infra/k8s/observability` separately if you want the configured collector and dashboards. GHCR must allow anonymous pulls for the published image, or the `spectral` namespace must have a GHCR `docker-registry` Secret and the Deployment must reference it using `imagePullSecrets`. Do not commit registry credentials or a cluster-admin kubeconfig.
