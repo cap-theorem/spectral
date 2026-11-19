@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# Create bare Foodbolt pods with Spectral sidecars for node-failure experiments.
+# Usage: FOODBOLT_RUN=demo-1 SPCTRLD_TAG=sha-... FOODBOLT_TAG=sha-... \
+#          ./scripts/foodbolt-pods SERVICE COUNT [KUBERNETES_HOSTNAME]
+# Run again with the same FOODBOLT_RUN to add another service to the same peer network.
+set -euo pipefail
+
+fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+[[ $# -ge 2 && $# -le 3 ]] || fail "usage: $0 SERVICE COUNT [KUBERNETES_HOSTNAME]"
+svc=$1
+count=$2
+host=${3:-}
+
+case $svc in
+  gateway)     port=8080 ;;
+  orders)      port=8081 ;;
+  restaurants) port=8082 ;;
+  payments)    port=8083 ;;
+  dispatch)    port=8084 ;;
+  *) fail "unknown service: $svc" ;;
+esac
+
+[[ $count =~ ^[1-9][0-9]*$ ]] && (( ${#count} <= 3 )) && (( count <= 500 )) || fail 'COUNT must be between 1 and 500'
+: "${FOODBOLT_RUN:?set FOODBOLT_RUN to a run ID such as demo-1}"
+: "${SPCTRLD_TAG:?set SPCTRLD_TAG to a published GHCR tag}"
+: "${FOODBOLT_TAG:?set FOODBOLT_TAG to a published GHCR tag}"
+[[ $FOODBOLT_RUN =~ ^[a-z0-9]([a-z0-9-]{0,28}[a-z0-9])?$ ]] || fail 'FOODBOLT_RUN must be a lowercase DNS label (up to 30 characters)'
+for tag in "$SPCTRLD_TAG" "$FOODBOLT_TAG"; do
+  [[ $tag =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || fail "invalid image tag: $tag"
+done
+[[ -z $host || $host =~ ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ ]] || fail 'host must be a kubernetes.io/hostname label value'
+
+collector_arg=''
+if [[ -n ${SPECTRAL_COLLECTOR_URL:-} ]]; then
+  [[ $SPECTRAL_COLLECTOR_URL =~ ^https?://[a-zA-Z0-9._:/-]+$ ]] || fail 'invalid SPECTRAL_COLLECTOR_URL'
+  collector_arg="        - \"--collector-url=$SPECTRAL_COLLECTOR_URL\""
+fi
+
+namespace=foodbolt
+seed_name="spctrld-seed-$FOODBOLT_RUN"
+selector="spectral.dev/run=$FOODBOLT_RUN"
+node_selector=''
+if [[ -n $host ]]; then
+  node_selector=$'  nodeSelector:\n    kubernetes.io/hostname: "'"$host"'"'
+fi
+
+render_seed_service() {
+  cat <<EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: $seed_name
+  namespace: $namespace
+  labels:
+    spectral.dev/run: "$FOODBOLT_RUN"
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    spectral.dev/run: "$FOODBOLT_RUN"
+    spectral.dev/role: seed
+  ports:
+    - name: quic
+      port: 7000
+      targetPort: quic
+      protocol: UDP
+EOF
+}
+
+render_seed() {
+  cat <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: $seed_name
+  namespace: $namespace
+  labels:
+    app: spctrld-seed
+    spectral.dev/run: "$FOODBOLT_RUN"
+    spectral.dev/role: seed
+spec:
+  restartPolicy: Never
+  containers:
+    - name: spctrld
+      image: ghcr.io/cap-theorem/spctrld:$SPCTRLD_TAG
+      imagePullPolicy: IfNotPresent
+      ports:
+        - name: quic
+          containerPort: 7000
+          protocol: UDP
+        - name: http
+          containerPort: 8000
+      env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: LOG_FORMAT
+          value: json
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.observability.svc.cluster.local:4317
+      args:
+        - "--listen-addr=\$(POD_IP):7000"
+        - "--api-port=8000"
+$collector_arg
+      resources:
+        requests:
+          cpu: 25m
+          memory: 24Mi
+EOF
+}
+
+render_workers() {
+  local i
+  for ((i = 0; i < count; i++)); do
+    cat <<EOF
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  generateName: $svc-$FOODBOLT_RUN-
+  namespace: $namespace
+  labels:
+    app: $svc
+    spectral.dev/run: "$FOODBOLT_RUN"
+    spectral.dev/role: worker
+    spectral.dev/peer: "true"
+spec:
+  restartPolicy: Never
+$node_selector
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          spectral.dev/run: "$FOODBOLT_RUN"
+          spectral.dev/role: worker
+  containers:
+    - name: spctrld
+      image: ghcr.io/cap-theorem/spctrld:$SPCTRLD_TAG
+      imagePullPolicy: IfNotPresent
+      ports:
+        - name: quic
+          containerPort: 7000
+          protocol: UDP
+        - name: http
+          containerPort: 8000
+      env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: LOG_FORMAT
+          value: json
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.observability.svc.cluster.local:4317
+      args:
+        - "--listen-addr=\$(POD_IP):7000"
+        - "--api-port=8000"
+        - "--bootstrap=$seed_name.$namespace.svc.cluster.local:7000"
+$collector_arg
+      resources:
+        requests:
+          cpu: 25m
+          memory: 24Mi
+    - name: $svc
+      image: ghcr.io/cap-theorem/foodbolt-$svc:$FOODBOLT_TAG
+      imagePullPolicy: IfNotPresent
+      ports:
+        - name: http
+          containerPort: $port
+      env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: MACHINE
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: ADVERTISE_URL
+          value: "http://\$(POD_IP):$port"
+        - name: SPECTRAL_ADDR
+          value: "http://localhost:8000"
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+EOF
+  done
+}
+
+# Render without contacting the cluster: useful for checking a batch before creation.
+if [[ ${DRY_RUN:-0} == 1 ]]; then
+  render_seed_service
+  printf '\n---\n'
+  render_seed
+  render_workers
+  exit 0
+fi
+
+: "${KUBECONFIG:?set KUBECONFIG to your local K3s kubeconfig}"
+[[ -r $KUBECONFIG ]] || fail "cannot read kubeconfig: $KUBECONFIG"
+command -v kubectl >/dev/null || fail 'kubectl is required'
+k() { command kubectl --kubeconfig "$KUBECONFIG" "$@"; }
+
+api_server=$(k config view --minify -o 'jsonpath={.clusters[0].cluster.server}')
+[[ $api_server == 'https://100.90.92.118:6443' ]] || fail "wrong cluster API server: $api_server"
+
+# The original Spectral Deployment must be scaled down or removed first.
+spectral_namespace=$(k get namespace spectral -o name --ignore-not-found) || fail 'cannot check the spectral namespace'
+if [[ -n $spectral_namespace ]]; then
+  old_pods=$(k -n spectral get pods -l 'app in (spctrld,spctrld-seed)' -o name) || fail 'cannot check existing Spectral pods'
+  [[ -z $old_pods ]] || fail 'old Spectral pods still exist in the spectral namespace; scale down both Deployments first'
+fi
+
+if [[ -n $host ]]; then
+  [[ -n $(k get nodes -l "kubernetes.io/hostname=$host" -o name) ]] || fail "no node has kubernetes.io/hostname=$host; check kubectl get nodes -L kubernetes.io/hostname"
+fi
+
+foodbolt_namespace=$(k get namespace "$namespace" -o name --ignore-not-found) || fail 'cannot check the foodbolt namespace'
+if [[ -z $foodbolt_namespace ]]; then
+  k create namespace "$namespace"
+fi
+render_seed_service | k apply -f -
+seed_pod=$(k -n "$namespace" get pod "$seed_name" -o name --ignore-not-found) || fail 'cannot check the seed Pod'
+if [[ -n $seed_pod ]]; then
+  current_image=$(k -n "$namespace" get pod "$seed_name" -o 'jsonpath={.spec.containers[0].image}')
+  [[ $current_image == "ghcr.io/cap-theorem/spctrld:$SPCTRLD_TAG" ]] || fail "existing seed $seed_name uses image $current_image"
+else
+  render_seed | k create -f -
+fi
+
+k -n "$namespace" wait --for=condition=Ready "pod/$seed_name" --timeout=180s || fail "seed $seed_name is not Ready; inspect its pod events"
+render_workers | k create -f -
+printf 'Created %s %s pod(s) in run %s (plus the seed).\n' "$count" "$svc" "$FOODBOLT_RUN"
+printf 'Inspect: kubectl -n %s get pods -l %s -o wide\n' "$namespace" "$selector"
+printf 'Clean up: kubectl -n %s delete pods,services -l %s\n' "$namespace" "$selector"
